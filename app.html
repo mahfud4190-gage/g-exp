@@ -9,7 +9,48 @@
  function routeUrl(target){try{return new URL(target||location.href,location.href)}catch{return new URL(location.href)}}
  function resolveRoute(url){const params=url.searchParams;let route=String(params.get('page')||'index').trim().toLowerCase();if(route==='app')route='index';const alias=(window.GE_ROUTE_ALIASES||{})[route];if(alias){const parts=String(alias).split('?');route=parts[0];if(parts[1])new URLSearchParams(parts[1]).forEach((v,k)=>{if(!params.has(k))params.set(k,v)});}params.set('page',route);return {route,params,url};}
  function ensureStyle(href){if([...document.querySelectorAll('link[rel="stylesheet"]')].some(x=>x.href&&x.href.includes(href.split('?')[0])))return;const l=document.createElement('link');l.rel='stylesheet';l.href=href;document.head.appendChild(l);}
- function loadSrc(src,force=false){const loaded=window.__geLoadedScripts||(window.__geLoadedScripts=new Map());if(src.includes('assets/master-reference.js'))src='assets/master-reference.js';if(src.includes('assets/dashboard-firestore.js'))src='assets/dashboard-firestore.js';const pathname=src.split('?')[0];if(!force){const existing=[...document.scripts].find(x=>x.src&&x.src.includes(pathname));if(existing&&((pathname.includes('edition1-store.js')&&window.GEStore)||!pathname.includes('edition1-store.js')))return Promise.resolve();if(loaded.has(pathname))return loaded.get(pathname);}const promise=new Promise((resolve,reject)=>{const script=document.createElement('script');const timeoutMs=pathname.includes('edition1-business-runtime.js')?45000:20000;let done=false;const finish=err=>{if(done)return;done=true;clearTimeout(timer);if(err){script.remove();reject(err)}else resolve()};const timer=setTimeout(()=>finish(new Error(`Timeout setelah ${timeoutMs/1000} detik memuat ${src}.`)),timeoutMs);script.src=force?pathname+'?route='+Date.now():src;script.onload=()=>finish();script.onerror=()=>finish(new Error('Gagal memuat '+src));document.body.appendChild(script);});if(!force)loaded.set(pathname,promise);return promise;}
+ const runtimeGlobals={
+  'assets/edition1-store.js':{name:'GEStore',method:'waitAuth'},
+  'assets/edition1-files.js':{name:'GEFiles',source:'Firebase Storage'}
+ };
+ function loadSrc(src,force=false){
+  const loaded=window.__geLoadedScripts||(window.__geLoadedScripts=new Map());
+  if(src.includes('assets/master-reference.js'))src='assets/master-reference.js';
+  if(src.includes('assets/dashboard-firestore.js'))src='assets/dashboard-firestore.js';
+  const pathname=src.split('?')[0];
+  const runtime=runtimeGlobals[pathname];
+  const isReady=value=>runtime.method?typeof value?.[runtime.method]==='function':value?.source===runtime.source;
+
+  if(!force){
+   if(loaded.has(pathname))return loaded.get(pathname).then(value=>{if(runtime)window[runtime.name]=value;});
+   if(runtime&&isReady(window[runtime.name]))return Promise.resolve();
+   const existing=[...document.scripts].find(script=>script.getAttribute('src')?.split('?')[0]===pathname);
+   if(existing&&!runtime)return Promise.resolve();
+  }
+
+  const promise=new Promise((resolve,reject)=>{
+   const script=document.createElement('script');
+   const timeoutMs=pathname.includes('edition1-business-runtime.js')?45000:20000;
+   let done=false;
+   const finish=err=>{
+    if(done)return;
+    done=true;
+    clearTimeout(timer);
+    if(err){script.remove();reject(err);}
+    else resolve(runtime?window[runtime.name]:undefined);
+   };
+   const timer=setTimeout(()=>finish(new Error(`Timeout setelah ${timeoutMs/1000} detik memuat ${src}.`)),timeoutMs);
+   script.src=force?pathname+'?route='+Date.now():src;
+   script.onload=()=>finish(runtime&&!isReady(window[runtime.name])?new Error('Runtime tidak siap setelah memuat '+src):null);
+   script.onerror=()=>finish(new Error('Gagal memuat '+src));
+   document.body.appendChild(script);
+  });
+  if(!force){
+   loaded.set(pathname,promise);
+   promise.catch(()=>{if(loaded.get(pathname)===promise)loaded.delete(pathname);});
+  }
+  return promise;
+ }
  if(['cx-import'].includes('__loader_contract__')){}
  async function renderRoute(target,opts={}){
   const initial=!!opts.initial;const historyMode=opts.historyMode||'push';const parsed=resolveRoute(routeUrl(target));const route=parsed.route,params=parsed.params;const isSharedChecklist=['monitoring-assessment','monitoring-checklist'].includes(route)&&!!params.get('share');
