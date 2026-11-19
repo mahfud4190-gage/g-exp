@@ -12,6 +12,7 @@
     airlines:[],groundHandlers:[],serviceAlignments:[],airportCosts:[],aircraftConfigs:[],currencies:[],exchangeRates:[],assets:[],facilities:[],
     standardContent:{},portalManagerR2:{},attentionSettings:{},contactMessages:[],guestbook:[],monitoringTemplates:[],monitoringAssessments:[],formTemplates:[],monitoringWorks:[],formSubmissions:[],customerExperience:[],referenceCatalog:[],requirementMatrix:[],stationCapabilities:[]
   };
+  const deletionsInProgress=new Map();
   const baseline={}; let hydrated=false; let pending=Promise.resolve(); let localRevision=0;
   const CACHE_DB='GE_E1_CACHE_V30'; const CACHE_STORE='collections'; const CACHE_SCHEMA='35';
   function session(){return typeof window.gxGetSession==='function'?(window.gxGetSession()||{}):window.GX_CURRENT_USER||{}}
@@ -105,7 +106,7 @@
   function indexById(rows){const m=new Map();(rows||[]).forEach(x=>m.set(String(x.id),x));return m}
   function same(a,b){return JSON.stringify(a)===JSON.stringify(b)}
   function populated(value){return Array.isArray(value)?value.length>0:!!value&&typeof value==='object'&&Object.keys(value).length>0}
-  async function persistSnapshot(snapshot){
+  async function persistSnapshot(snapshot, queuedDeletions){
     const keys=Object.keys(snapshot);
     for(const key of keys){
       const collection=collKey(key);
@@ -117,29 +118,57 @@
       const prev=baseline[key]||[]; const next=snapshot[key]||[];
       const pm=indexById(prev), nm=indexById(next), changes=[];
       for(const [id,row] of nm){
+        if(queuedDeletions.get(JSON.stringify([collection,id]))?.completed)continue;
         if(!pm.has(id)) changes.push({action:'CREATE',id,data:row});
         else if(!same(pm.get(id),row)) changes.push({action:'UPDATE',id,data:row});
       }
-      for(const id of pm.keys()) if(!nm.has(id)) changes.push({action:'DELETE',id,data:{}});
       if(changes.length===1) await apiPost({collection,...changes[0]});
       else if(changes.length>1) await apiPostBatch(collection,changes);
-      baseline[key]=clone(next);
-      if(cacheAllowed()) await writeCache(key,Array.isArray(next)?next:[next]);
+      // Missing rows in a working snapshot may still exist on the server.
+      if(!changes.length)continue;
+      for(const change of changes)pm.set(change.id,nm.get(change.id));
+      baseline[key]=clone([...pm.values()]);
+      if(cacheAllowed())await writeCache(key,baseline[key]);
     }
     if(cacheAllowed()) await clearManifestCache()
   }
   function save(next){
     localRevision++;
     const snapshot={};
-    // Only persist collections that this page actually hydrated. The runtime shares
-    // one in-memory state object, so sending untouched empty arrays could otherwise
-    // be interpreted as DELETE for collections that were never loaded on this page.
+    // Only create or update records from collections this page hydrated.
+    const queuedDeletions=new Map(deletionsInProgress);
     for(const k of Object.keys(next||{})){
       if(!Object.prototype.hasOwnProperty.call(baseline,k)) continue;
       if(Array.isArray(next[k])||k==='standardContent'||k==='portalManagerR2'||k==='attentionSettings')snapshot[k]=clone(next[k]);
     }
-    const previous=pending.catch(()=>undefined); pending=previous.then(()=>persistSnapshot(snapshot)).catch(err=>{console.error('[Edition1 Firebase Store]',err);window.dispatchEvent(new CustomEvent('gx-data-save-error',{detail:err}));throw err});
+    const previous=pending.catch(()=>undefined); pending=previous.then(()=>persistSnapshot(snapshot,queuedDeletions)).catch(err=>{console.error('[Edition1 Firebase Store]',err);window.dispatchEvent(new CustomEvent('gx-data-save-error',{detail:err}));throw err});
     return next;
+  }
+  function deleteRecord(key,id){
+    const collection=collKey(key);
+    const stateKey=collection==='projectEvents'?'events':key;
+    const recordId=String(id??'').trim();
+    if(!recordId || !Array.isArray(state[stateKey]))return Promise.reject(new Error('Invalid record for deletion.'));
+    const operationKey=JSON.stringify([collection,recordId]);
+    const current=deletionsInProgress.get(operationKey);
+    if(current)return current.promise;
+
+    localRevision++;
+    const operation={completed:false};
+    const task=pending.catch(()=>undefined).then(async()=>{
+      await apiPost({collection,action:'DELETE_RECORD',id:recordId});
+      localRevision++;
+      operation.completed=true;
+      const withoutRecord=rows=>rows.filter(row=>String(row.id)!==recordId);
+      state[stateKey]=withoutRecord(state[stateKey]);
+      if(Object.hasOwn(baseline,stateKey))baseline[stateKey]=withoutRecord(baseline[stateKey]);
+      const cached=await readCache(key);
+      if(cached)await writeCache(key,withoutRecord(cached.rows));
+      await clearManifestCache();
+    });
+    pending=operation.promise=task.finally(()=>deletionsInProgress.delete(operationKey));
+    deletionsInProgress.set(operationKey,operation);
+    return operation.promise;
   }
   async function refresh(keys){
     const requested=[...new Set((keys||[]).map(String).filter(Boolean))];
@@ -242,6 +271,6 @@
   }
   async function loadInboxThread(id){const t=await token(),r=await fetchWithTimeout('/api/edition1-data?thread='+encodeURIComponent(id),{headers:{Authorization:'Bearer '+t},cache:'no-store'}),p=await r.json();if(!r.ok)throw Error(p.message||'Conversation could not be loaded.');return p.thread||[]}
   async function replyInbox(id,body){const result=await apiPost({collection:'inbox',action:'CREATE',id:globalThis.crypto?.randomUUID?.()||String(Date.now()),data:{replyToId:String(id),body:String(body||'').trim()}});await clearManifestCache();return result}
-  window.data=state; window.GEStore={get:()=>state,save,hydrate,refresh,waitAuth,markInboxRead,loadInboxThread,replyInbox,isHydrated:()=>hydrated,flush:()=>pending,source:'Firestore',projectId:window.GX_FIREBASE_CONFIG?.projectId||''};
+  window.data=state; window.GEStore={get:()=>state,save,deleteRecord,hydrate,refresh,waitAuth,markInboxRead,loadInboxThread,replyInbox,isHydrated:()=>hydrated,flush:()=>pending,source:'Firestore',projectId:window.GX_FIREBASE_CONFIG?.projectId||''};
   window.addEventListener('gx-data-save-error',e=>{if(e.detail?.message)console.error('Firestore save failed:',e.detail.message)});
 })();

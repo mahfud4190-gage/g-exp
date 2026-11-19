@@ -19,6 +19,17 @@ let data=store.get();
 let activeJourney='';
 
 function save(){store.save(data)}
+async function geDeleteFirestoreRecord(collection,id){
+  try{
+    await store.deleteRecord(collection,id);
+    return true;
+  }catch(error){
+    const message=error?.message||'Data belum terhapus. Silakan coba lagi.';
+    if(typeof window.geStorageNoticeV223==='function')window.geStorageNoticeV223('Penghapusan Gagal',message,'error');
+    else alert(message);
+    return false;
+  }
+}
 function achievement(plan,real){return +real<+plan?'Below':(+real===+plan?'Meet':'Exceed')}
 function achievementPill(plan,real){
  const s=achievement(plan,real);
@@ -262,8 +273,8 @@ function editNews(id){
  ntitle.value=n.title;ndate.value=n.date;ncat.value=n.category;nsum.value=n.summary;
  newsForm.dataset.edit=id;newsSaveBtn.textContent='Update Headline';
 }
-function deleteNews(id){
- if(confirm('Hapus headline ini?')){data.news=data.news.filter(x=>x.id!==id);save();renderNews();renderNewsAdmin()}
+async function deleteNews(id){
+ if(confirm('Hapus headline ini?')){if(!await geDeleteFirestoreRecord('news',id))return;renderNews();renderNewsAdmin()}
 }
 function airportPanel(a){
  const p=document.getElementById('mapPanel');if(!p)return;
@@ -422,7 +433,7 @@ async function addInitiativeDocument(form){
  data.documents.push({id:Date.now(),title:form.elements.title.value.trim(),category:form.elements.category.value.trim()||'Laporan Inisiatif',source:'Kegiatan & Inisiatif',date:new Date().toISOString().slice(0,10),fileName:f.name,note:activeJourney||'',blobKey:key});
  save();form.reset();alert('Dokumen berhasil diunggah dan akan tampil pada Beranda.');
 }
-function deletePortalDocument(id){if(confirm('Hapus dokumen dari daftar?')){data.documents=data.documents.filter(x=>x.id!==id);save();renderDocumentsAdmin();renderDocumentsHome()}}
+async function deletePortalDocument(id){if(confirm('Hapus dokumen dari daftar?')){if(!await geDeleteFirestoreRecord('documents',id))return;renderDocumentsAdmin();renderDocumentsHome()}}
 
 function fillAirportSelects(){
  const codes=[...new Set((data.airports||[]).map(x=>x.code))].sort();
@@ -445,7 +456,7 @@ async function addLounge(){
  const f=document.getElementById('loungeDocument')?.files?.[0];let key='';if(f){key='lounge_'+Date.now();await GEFiles.put(key,f)}
  data.lounges.push({id:Date.now(),name:loungeName.value.trim(),pic:loungePIC.value.trim(),airport:loungeAirport.value.trim().toUpperCase(),status:loungeStatus.value,period:loungePeriod.value.trim(),documentName:f?.name||'',documentKey:key});save();loungeForm.reset();renderLounges();alert('Lounge berhasil ditambahkan.');
 }
-function deleteLounge(id){if(confirm('Hapus lounge ini?')){data.lounges=data.lounges.filter(x=>x.id!==id);save();renderLounges()}}
+async function deleteLounge(id){if(confirm('Hapus lounge ini?')){if(!await geDeleteFirestoreRecord('lounges',id))return;renderLounges()}}
 function downloadLoungesCSV(){let csv='No,Nama Lounge,PIC,Airport,Status,Periode Kerja Sama,Dokumen Kerja Sama\n';loungeFiltered().forEach((x,i)=>csv+=`${i+1},"${x.name}","${x.pic}",${x.airport},"${x.status}","${x.period}","${x.documentName||''}"\n`);downloadBlob(csv,'Daftar_Lounge.csv','text/csv;charset=utf-8')}
 
 window.addEventListener('DOMContentLoaded',()=>{restoreLoungeState();fillAirportSelects();initDashboard();renderLoungeVisitors();renderLounges()});
@@ -858,9 +869,9 @@ async function uploadLoungeDocument(id,input){
  const f=input.files?.[0];if(!f)return;const x=data.lounges.find(a=>a.id===id);if(!x)return;
  const key='lounge_doc_'+Date.now();await GEFiles.put(key,f);x.documentName=f.name;x.documentKey=key;save();renderLounges();input.value='';alert('Lampiran dokumen berhasil diperbarui.');
 }
-function deleteLounge(id){
+async function deleteLounge(id){
  if(!currentUserIsAdmin())return;
- if(confirm('Hapus lounge ini dari daftar?')){data.lounges=data.lounges.filter(x=>x.id!==id);save();renderLounges();refreshScanLoungeOptions()}
+ if(confirm('Hapus lounge ini dari daftar?')){if(!await geDeleteFirestoreRecord('lounges',id))return;renderLounges();refreshScanLoungeOptions()}
 }
 function downloadLoungesCSV(){
  let csv='No,Nama Lounge,PIC,Airport,Status,Tanggal Mulai,Tanggal Berakhir,Harga per Pax,Lampiran Dokumen\n';
@@ -1319,12 +1330,11 @@ function geVisitorEdit(id){
   save();renderLoungeVisitors();initDashboard();
   alert('Data Lounge Visitor berhasil diperbarui.');
 }
-function geVisitorDelete(id){
+async function geVisitorDelete(id){
   if(!geCurrentUserCanManageVisitors())return alert('Hanya Super Admin dan Admin yang dapat menghapus data Lounge Visitor.');
   const x=(data.loungeVisitors||[]).find(v=>String(v.id)===String(id));if(!x)return;
   if(!confirm(`Hapus data visitor ${x.name||''} / ${x.flight||''} / ${x.seq||'-'}?`))return;
-  data.loungeVisitors=(data.loungeVisitors||[]).filter(v=>String(v.id)!==String(id));
-  save();renderLoungeVisitors();initDashboard();
+  if(!await geDeleteFirestoreRecord('loungeVisitors',id))return;renderLoungeVisitors();initDashboard();
 }
 
 function renderLoungeVisitors(){
@@ -1706,11 +1716,11 @@ function savePersonnel(){
   if(id)Object.assign(data.personnel.find(p=>p.id===id),obj);else data.personnel.push(obj);
   save();closePersonnelModal();renderPersonnel();renderPersonnelReadiness();
 }
-function deletePersonnel(id){
+async function deletePersonnel(id){
   if(!geCanManageMasterData())return;
   const x=(data.personnel||[]).find(p=>p.id===id);if(!x)return;
   if(!confirm(`Hapus personil ${x.name}?`))return;
-  data.personnel=data.personnel.filter(p=>p.id!==id);save();renderPersonnel();renderPersonnelReadiness();
+  if(!await geDeleteFirestoreRecord('personnel',id))return;renderPersonnel();renderPersonnelReadiness();
 }
 
 /* Filters for every table in Data */
@@ -2106,7 +2116,7 @@ async function openInboxDetail(id){
 }
 function closeInboxDetail(){document.getElementById('inboxDetailModal')?.classList.remove('show')}
 function markInboxHandled(id){const x=findInbox(id);if(x){x.status='Handled';save();renderAdminInbox()}}
-function deleteInbox(id){if(confirm('Hapus pesan ini?')){data.inbox=data.inbox.filter(x=>String(x.id)!==String(id));save();renderAdminInbox()}}
+async function deleteInbox(id){if(confirm('Hapus pesan ini?')){if(!await geDeleteFirestoreRecord('inbox',id))return;renderAdminInbox()}}
 
 /* ---------- Audit ---------- */
 function geDateTime(v){try{return new Date(v).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'})}catch(e){return v||'-'}}
@@ -2225,7 +2235,7 @@ async function saveArticle(){
  if(proposalId){const p=(data.inbox||[]).find(v=>String(v.id)===String(proposalId));if(p)p.status='Handled';const article=(data.articles||[]).find(v=>v.title===title&&v.content===content);if(article)article.proposalId=proposalId}
  save();closeArticleEditor();renderArticles();renderAdminOverview();
 }
-function deleteArticle(id){if(geIsAdmin()&&confirm('Hapus artikel ini?')){data.articles=data.articles.filter(x=>x.id!==id);save();renderArticles()}}
+async function deleteArticle(id){if(geIsAdmin()&&confirm('Hapus artikel ini?')){if(!await geDeleteFirestoreRecord('articles',id))return;renderArticles()}}
 function openArticleProposal(){if(!geIsBranchOffice())return;proposalTitle.value='';proposalAuthorInitial.value='';proposalContentEditor.innerHTML='';articleProposalModal.classList.add('show')}
 function closeArticleProposal(){articleProposalModal?.classList.remove('show')}
 async function submitArticleProposal(){
@@ -2250,7 +2260,7 @@ function renderAnnouncements(){
 function openAnnouncementEditor(id=null){if(!geIsAdmin())return;const x=id?(data.announcements||[]).find(v=>v.id===id):null;announcementEditId.value=x?.id||'';announcementTitle.value=x?.title||'';announcementContent.innerHTML=x?.content||'';announcementEditorTitle.textContent=x?'Edit Pengumuman':'Tambah Pengumuman';announcementEditorModal.classList.add('show')}
 function closeAnnouncementEditor(){announcementEditorModal?.classList.remove('show')}
 function saveAnnouncement(){if(!geIsAdmin())return;const title=announcementTitle.value.trim(),content=geSanitizeHTML(announcementContent.innerHTML),id=Number(announcementEditId.value||0),u=geAuditUser();if(!title||!content)return alert('Judul dan isi wajib diisi.');const x=id?(data.announcements||[]).find(v=>v.id===id):null;if(x){x.title=title;x.content=content;x.updatedAt=new Date().toISOString()}else data.announcements.unshift({id:Date.now(),title,content,createdBy:u.name||u.username,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),status:'Published'});save();closeAnnouncementEditor();renderAnnouncements()}
-function deleteAnnouncement(id){if(geIsAdmin()&&confirm('Hapus pengumuman ini?')){data.announcements=data.announcements.filter(x=>x.id!==id);save();renderAnnouncements()}}
+async function deleteAnnouncement(id){if(geIsAdmin()&&confirm('Hapus pengumuman ini?')){if(!await geDeleteFirestoreRecord('announcements',id))return;renderAnnouncements()}}
 
 /* ---------- FAQ ---------- */
 function renderFaqs(){
@@ -2260,7 +2270,7 @@ function renderFaqs(){
 function openFaqEditor(id=null){if(!geIsAdmin())return;const x=id?(data.faqs||[]).find(v=>v.id===id):null;faqEditId.value=x?.id||'';faqQuestion.value=x?.question||'';faqAnswer.value=x?.answer||'';faqEditorTitle.textContent=x?'Edit FAQ':'Tambah FAQ';faqEditorModal.classList.add('show')}
 function closeFaqEditor(){faqEditorModal?.classList.remove('show')}
 function saveFaq(){if(!geIsAdmin())return;const question=faqQuestion.value.trim(),answer=faqAnswer.value.trim(),id=Number(faqEditId.value||0),u=geAuditUser();if(!question||!answer)return alert('Pertanyaan dan jawaban wajib diisi.');const x=id?(data.faqs||[]).find(v=>v.id===id):null;if(x){x.question=question;x.answer=answer;x.updatedAt=new Date().toISOString()}else data.faqs.unshift({id:Date.now(),question,answer,createdBy:u.name||u.username,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),status:'Published'});save();closeFaqEditor();renderFaqs()}
-function deleteFaq(id){if(geIsAdmin()&&confirm('Hapus FAQ ini?')){data.faqs=data.faqs.filter(x=>x.id!==id);save();renderFaqs()}}
+async function deleteFaq(id){if(geIsAdmin()&&confirm('Hapus FAQ ini?')){if(!await geDeleteFirestoreRecord('faqs',id))return;renderFaqs()}}
 
 /* ---------- Contact / Guestbook ---------- */
 function supportActor(){const u=geAuditUser();return {id:String(u.uid||u.id||''),name:u.name||u.username||u.email||'User',area:u.unit||(u.airports||[]).join(', ')||''}}
@@ -3151,7 +3161,7 @@ async function deletePlanningRecord(type,id){
  const label=x.name||x.product||x.airport||x.touchpoint||x.code||'Planning Record';
  const ok=typeof geConfirmDeleteV234==='function'?await geConfirmDeleteV234({title:'Delete Data',item:label,message:'Data yang dihapus tidak dapat dikembalikan.',confirmLabel:'Delete',cancelLabel:'Cancel'}):window.confirm(`Delete ${label}?`);
  if(!ok)return;
- data[coll]=(data[coll]||[]).filter(v=>String(v.id)!==String(id));save();geRenderPlanningPage();
+ if(!await geDeleteFirestoreRecord(coll,id))return;geRenderPlanningPage();
 }
 function planAction(type,id){return gePlanningCanManage()?`<td><button class="ge-btn secondary compact-btn" onclick="openPlanningRecordModal('${type}',${id})">Edit</button><button class="ge-btn danger compact-btn" onclick="deletePlanningRecord('${type}',${id})">Delete</button></td>`:''}
 
@@ -4293,7 +4303,7 @@ async function deleteInitiativeV224(id){
   const row=(data.initiatives||[]).find(x=>String(x.id)===String(id));
   const ok=window.gePortalConfirm?await window.gePortalConfirm({title:'Delete Initiative',message:`Delete ${row?.name||'this initiative'}? This action cannot be undone.`,confirmLabel:'Delete',danger:true}):window.confirm('Delete this initiative?');
   if(!ok)return;
-  data.initiatives=data.initiatives.filter(x=>String(x.id)!==String(id));save();renderInitiatives();
+  if(!await geDeleteFirestoreRecord('initiatives',id))return;renderInitiatives();
 }
 
 /* Staff / BO progress-only edit */
@@ -4941,9 +4951,9 @@ function saveAirportV231(){
  if(id)Object.assign(data.airports.find(a=>a.id===id),obj);else data.airports.push(obj);
  data.airports.forEach((a,i)=>a.no=i+1);save();closeAirportModalV231();renderAirports();renderAirportMapMarkers();
 }
-function deleteAirportV231(id){
+async function deleteAirportV231(id){
  if(!geAdminV231())return;const x=(data.airports||[]).find(a=>a.id===id);if(!x||!geDeleteConfirmV231(`Airport ${x.code}`))return;
- data.airports=data.airports.filter(a=>a.id!==id);data.airports.forEach((a,i)=>a.no=i+1);save();renderAirports();renderAirportMapMarkers();
+ if(!await geDeleteFirestoreRecord('airports',id))return;renderAirports();renderAirportMapMarkers();
 }
 renderAirports=function(){
  const t=document.getElementById('airportRows');if(!t)return;
@@ -4978,7 +4988,7 @@ async function saveStationMaterialV231(){
  if(!obj.code||!obj.product||!obj.startDate||!obj.endDate||obj.endDate<obj.startDate)return geStorageNoticeV223('Data Belum Lengkap','Kode Barang, Nama Barang, serta periode Mulai–Berakhir yang valid wajib diisi.');
  if(id)Object.assign(old,obj);else data.stationMaterials.push(obj);try{save();await window.GEStore?.flush?.();closeStationMaterialModalV231();renderStationMaterials();renderPlanningOverview();geStorageNoticeV223('Station Material Tersimpan',`${obj.product} berhasil disimpan.`,'success')}catch(e){geStorageNoticeV223('Penyimpanan Gagal',e.message||String(e),'error')}
 }
-function deleteStationMaterialV231(id){if(!geAdminV231())return;const x=data.stationMaterials.find(v=>v.id===id);if(!x||!geDeleteConfirmV231(x.product))return;data.stationMaterials=data.stationMaterials.filter(v=>v.id!==id);save();renderStationMaterials()}
+async function deleteStationMaterialV231(id){if(!geAdminV231())return;const x=data.stationMaterials.find(v=>v.id===id);if(!x||!geDeleteConfirmV231(x.product))return;if(!await geDeleteFirestoreRecord('stationMaterials',id))return;renderStationMaterials()}
 renderStationMaterials=function(){
  const tbody=document.getElementById('stationMaterialRows');if(!tbody)return;const rows=data.stationMaterials||[];
  gePlanningPopulateSelect('materialAreaFilterV231',rows.map(x=>x.area),'Semua Area');gePlanningPopulateSelect('materialVendorFilterV231',rows.map(x=>x.vendor),'Semua Vendor');gePlanningPopulateSelect('materialStatusFilter',rows.map(x=>x.status),'Semua Status');
@@ -5004,7 +5014,7 @@ function saveAirportSystemV231(){
  transferDesk:airportSystemTransferV231.value.trim(),provider:airportSystemProviderV231.value.trim(),area:airportSystemAreaV231.value.trim(),remarks:airportSystemRemarksV231.value.trim()};
  if(!obj.airport)return; if(id)Object.assign(data.airportSystems.find(x=>x.id===id),obj);else data.airportSystems.push(obj);save();closeAirportSystemModalV231();renderAirportSystems();
 }
-function deleteAirportSystemV231(id){if(!geAdminV231())return;const x=data.airportSystems.find(v=>v.id===id);if(!x||!geDeleteConfirmV231(`Airport System ${x.airport}`))return;data.airportSystems=data.airportSystems.filter(v=>v.id!==id);save();renderAirportSystems()}
+async function deleteAirportSystemV231(id){if(!geAdminV231())return;const x=data.airportSystems.find(v=>v.id===id);if(!x||!geDeleteConfirmV231(`Airport System ${x.airport}`))return;if(!await geDeleteFirestoreRecord('airportSystems',id))return;renderAirportSystems()}
 renderAirportSystems=function(){
  const tbody=document.getElementById('airportSystemRows');if(!tbody)return;const rows=gePlanningScoped(data.airportSystems||[]);
  gePlanningPopulateSelect('systemAirportFilter',rows.map(x=>x.airport),'Semua Airport');gePlanningPopulateSelect('systemProviderFilterV231',rows.map(x=>x.provider),'Semua Provider');gePlanningPopulateSelect('systemAreaFilterV231',rows.map(x=>x.area),'Semua Area');
@@ -5044,7 +5054,7 @@ function saveGasoV231(){
  obj.code=String(obj.code||'').toUpperCase();if(!obj.code)return;
  if(id)Object.assign(data[coll].find(x=>x.id===id),obj);else data[coll].push(obj);save();closeGasoModalV231();renderGasoAllV231();
 }
-function deleteGasoV231(type,id){if(!geAdminV231())return;const coll=GE_GASO_COLLECTION_V231[type],x=data[coll].find(v=>v.id===id);if(!x||!geDeleteConfirmV231(x.code||'GASO record'))return;data[coll]=data[coll].filter(v=>v.id!==id);save();renderGasoAllV231()}
+async function deleteGasoV231(type,id){if(!geAdminV231())return;const coll=GE_GASO_COLLECTION_V231[type],x=data[coll].find(v=>v.id===id);if(!x||!geDeleteConfirmV231(x.code||'GASO record'))return;if(!await geDeleteFirestoreRecord(coll,id))return;renderGasoAllV231()}
 function gasoActionsV231(type,id){return geAdminV231()?`<td class="visitor-actions"><button class="ge-btn secondary compact-btn" onclick="openGasoModalV231('${type}',${id})">Edit</button><button class="ge-btn danger compact-btn" onclick="deleteGasoV231('${type}',${id})">Delete</button></td>`:''}
 function renderGasoMasterV231(){
  const t=document.getElementById('gasoMasterRowsV231');if(!t)return;const rows=data.gasoMaster||[];gePlanningPopulateSelect('gasoMasterRegionV231',rows.map(x=>x.region),'Semua Region');
@@ -5259,9 +5269,9 @@ function savePurchaseV232(){
   if(id)Object.assign(data.loungePurchases.find(x=>x.id===id),obj);else data.loungePurchases.push(obj);
   save();closePurchaseModalV232();renderPurchaseV232();
 }
-function deletePurchaseV232(id){
+async function deletePurchaseV232(id){
   if(!geCanManagePurchaseV232()||!confirm('Hapus transaksi pembelian akses ini?'))return;
-  data.loungePurchases=data.loungePurchases.filter(x=>x.id!==id);save();renderPurchaseV232();
+  if(!await geDeleteFirestoreRecord('loungePurchases',id))return;renderPurchaseV232();
 }
 function renderPurchaseV232(){
   const tbody=document.getElementById('purchaseRowsV232');if(!tbody)return;
@@ -5484,19 +5494,19 @@ function geConfirmDeleteV234(options={}){
 deleteNews = async function(id){
   const x=(data.news||[]).find(v=>v.id===id);if(!x)return;
   if(!await geConfirmDeleteV234({title:'Hapus Headline?',item:x.title||'Headline',message:'Headline akan dihapus dari Berita & Informasi.'}))return;
-  data.news=data.news.filter(v=>v.id!==id);save();renderNews();renderNewsAdmin();
+  if(!await geDeleteFirestoreRecord('news',id))return;renderNews();renderNewsAdmin();
 };
 
 deletePortalDocument = async function(id){
   const x=(data.documents||[]).find(v=>v.id===id);if(!x)return;
   if(!await geConfirmDeleteV234({title:'Hapus Dokumen?',item:x.title||x.fileName||'Dokumen',message:'Dokumen akan dihapus dari daftar portal.'}))return;
-  data.documents=data.documents.filter(v=>v.id!==id);save();renderDocumentsAdmin();renderDocumentsHome();
+  if(!await geDeleteFirestoreRecord('documents',id))return;renderDocumentsAdmin();renderDocumentsHome();
 };
 
 deleteLounge = async function(id){
   const x=(data.lounges||[]).find(v=>v.id===id);if(!x)return;
   if(!await geConfirmDeleteV234({title:'Hapus Layanan Lounge/Tenant?',item:`${x.airport||''} — ${x.name||'Layanan'}`,message:'Data layanan, periode, harga, dan referensinya akan dihapus dari master.'}))return;
-  data.lounges=data.lounges.filter(v=>v.id!==id);save();
+  if(!await geDeleteFirestoreRecord('lounges',id))return;
   if(typeof renderLounges==='function')renderLounges();
   if(typeof refreshScanLoungeOptions==='function')refreshScanLoungeOptions();
   if(typeof renderLoungeProcurement==='function')renderLoungeProcurement();
@@ -5510,7 +5520,7 @@ deleteVisitor = async function(id){
     item:`${x.name||'Penumpang'} • ${x.flight||'-'} • Sequence ${x.seq||'-'}`,
     message:'Record visitor akan dihapus dan tidak lagi dihitung pada summary, traffic, maupun estimasi.'
   }))return;
-  data.loungeVisitors=data.loungeVisitors.filter(v=>v.id!==id);save();renderLoungeVisitors();initDashboard();
+  if(!await geDeleteFirestoreRecord('loungeVisitors',id))return;renderLoungeVisitors();initDashboard();
 };
 
 deleteUserAccount = async function(id){
@@ -5521,7 +5531,7 @@ deleteUserAccount = async function(id){
     item:`${u.name||u.username} (${u.username})`,
     message:'Akun tidak akan dapat login lagi setelah dihapus.'
   }))return;
-  data.users=data.users.filter(v=>v.id!==id);save();renderUserAccounts();
+  if(!await geDeleteFirestoreRecord('users',id))return;renderUserAccounts();
 };
 
 deletePersonnel = async function(id){
@@ -5532,31 +5542,31 @@ deletePersonnel = async function(id){
     item:`${x.name||'Personil'} • ${x.airport||'HO'}`,
     message:'Data personil akan dihapus dari master Airport & Head Office.'
   }))return;
-  data.personnel=data.personnel.filter(v=>v.id!==id);save();renderPersonnel();
+  if(!await geDeleteFirestoreRecord('personnel',id))return;renderPersonnel();
 };
 
 deleteInbox = async function(id){
   const x=(data.inbox||[]).find(v=>v.id===id);if(!x)return;
   if(!await geConfirmDeleteV234({title:'Hapus Pesan?',item:x.subject||x.name||'Pesan Masuk',message:'Pesan akan dihapus dari Admin / Pengelola.'}))return;
-  data.inbox=data.inbox.filter(v=>String(v.id)!==String(id));save();renderAdminInbox();
+  if(!await geDeleteFirestoreRecord('inbox',id))return;renderAdminInbox();
 };
 
 deleteArticle = async function(id){
   if(!geIsAdmin())return;const x=(data.articles||[]).find(v=>v.id===id);if(!x)return;
   if(!await geConfirmDeleteV234({title:'Hapus Artikel?',item:x.title||'Artikel',message:'Artikel yang sudah dipublikasikan akan dihapus.'}))return;
-  data.articles=data.articles.filter(v=>v.id!==id);save();renderArticles();
+  if(!await geDeleteFirestoreRecord('articles',id))return;renderArticles();
 };
 
 deleteAnnouncement = async function(id){
   if(!geIsAdmin())return;const x=(data.announcements||[]).find(v=>v.id===id);if(!x)return;
   if(!await geConfirmDeleteV234({title:'Hapus Pengumuman?',item:x.title||'Pengumuman',message:'Pengumuman akan dihapus dari Berita & Informasi.'}))return;
-  data.announcements=data.announcements.filter(v=>v.id!==id);save();renderAnnouncements();
+  if(!await geDeleteFirestoreRecord('announcements',id))return;renderAnnouncements();
 };
 
 deleteFaq = async function(id){
   if(!geIsAdmin())return;const x=(data.faqs||[]).find(v=>v.id===id);if(!x)return;
   if(!await geConfirmDeleteV234({title:'Hapus FAQ?',item:x.question||'FAQ',message:'Pertanyaan dan jawaban akan dihapus.'}))return;
-  data.faqs=data.faqs.filter(v=>v.id!==id);save();renderFaqs();
+  if(!await geDeleteFirestoreRecord('faqs',id))return;renderFaqs();
 };
 
 deletePlanningRecordV222 = async function(type,id){
@@ -5564,7 +5574,7 @@ deletePlanningRecordV222 = async function(type,id){
   const cfg=GE_PLANNING_RECORD_V222[type];if(!cfg)return;
   const x=(data[cfg.collection]||[]).find(v=>v.id===id);if(!x)return;
   if(!await geConfirmDeleteV234({title:'Hapus Planning Record?',item:x.title||x.name||x.location||x.airport||'Planning Record',message:'Record planning akan dihapus dari master terkait.'}))return;
-  data[cfg.collection]=data[cfg.collection].filter(v=>v.id!==id);save();
+  if(!await geDeleteFirestoreRecord(cfg.collection,id))return;
   if(type==='space')renderBOSpaces();
   if(type==='system')renderAirportSystems();
 };
@@ -5578,9 +5588,7 @@ window.deleteInitiativeV224 = async function(id){
   if(!x)return false;
   if(!await geConfirmDeleteV234({title:'Hapus Inisiatif?',item:x.name||'Inisiatif',message:'Timeline, milestone, dan referensi dokumen yang terkait dengan inisiatif ini akan ikut terhapus dari master inisiatif.'}))return false;
   try{
-    d.initiatives=d.initiatives.filter(v=>String(v.id)!==key);
-    window.GEStore.save(d);
-    await window.GEStore.flush();
+    await store.deleteRecord('initiatives',key);
     window.renderInitiatives?.();
     geStorageNoticeV223('Inisiatif Dihapus',`${x.name||'Inisiatif'} berhasil dihapus.`,'success');
     return true;
@@ -5614,28 +5622,28 @@ geDeleteConfirmV231 = async function(label){
 deleteAirportV231 = async function(id){
   if(!geAdminV231())return;const x=(data.airports||[]).find(a=>a.id===id);if(!x)return;
   if(!await geConfirmDeleteV234({title:'Hapus Database Airport?',item:`${x.code} — ${x.city}`,message:'Airport akan dihapus dari master dan tidak lagi menjadi referensi utama portal.'}))return;
-  data.airports=data.airports.filter(a=>a.id!==id);data.airports.forEach((a,i)=>a.no=i+1);save();renderAirports();renderAirportMapMarkers();
+  if(!await geDeleteFirestoreRecord('airports',id))return;renderAirports();renderAirportMapMarkers();
 };
 deleteStationMaterialV231 = async function(id){
   if(!geAdminV231())return;const x=(data.stationMaterials||[]).find(v=>v.id===id);if(!x)return;
   if(!await geConfirmDeleteV234({title:'Hapus Station Material?',item:`${x.code||''} — ${x.product||'Material'}`,message:'Data barang cetak kestasiunan akan dihapus dari master.'}))return;
-  data.stationMaterials=data.stationMaterials.filter(v=>v.id!==id);save();renderStationMaterials();
+  if(!await geDeleteFirestoreRecord('stationMaterials',id))return;renderStationMaterials();
 };
 deleteAirportSystemV231 = async function(id){
   if(!geAdminV231())return;const x=(data.airportSystems||[]).find(v=>v.id===id);if(!x)return;
   if(!await geConfirmDeleteV234({title:'Hapus Airport System?',item:`${x.airport||''} • ${x.provider||'System'}`,message:'Record CUTE/CUPPS/Airport System akan dihapus dari master.'}))return;
-  data.airportSystems=data.airportSystems.filter(v=>v.id!==id);save();renderAirportSystems();
+  if(!await geDeleteFirestoreRecord('airportSystems',id))return;renderAirportSystems();
 };
 deleteGasoV231 = async function(type,id){
   if(!geAdminV231())return;const coll=GE_GASO_COLLECTION_V231[type],x=(data[coll]||[]).find(v=>v.id===id);if(!x)return;
   if(!await geConfirmDeleteV234({title:'Hapus Data GASO?',item:`${x.code||'GASO'} — ${x.officeName||x.service||x.item||'Record'}`,message:'Record akan dihapus dari master GASO terkait.'}))return;
-  data[coll]=data[coll].filter(v=>v.id!==id);save();renderGasoAllV231();
+  if(!await geDeleteFirestoreRecord(coll,id))return;renderGasoAllV231();
 };
 
 deletePurchaseV232 = async function(id){
   if(!geCanManagePurchaseV232())return;const x=(data.loungePurchases||[]).find(v=>v.id===id);if(!x)return;
   if(!await geConfirmDeleteV234({title:'Hapus Pembelian Akses?',item:`${x.name||'Penumpang'} • ${x.flight||'-'} • ${x.reference||x.accessType||'-'}`,message:'Transaksi akses Lounge/Tenant akan dihapus dari daftar.'}))return;
-  data.loungePurchases=data.loungePurchases.filter(v=>v.id!==id);save();renderPurchaseV232();
+  if(!await geDeleteFirestoreRecord('loungePurchases',id))return;renderPurchaseV232();
 };
 
 
@@ -5883,7 +5891,7 @@ function saveFlightV236(){
 async function deleteFlightV236(id){
   if(!geCanManageFlightsV236())return;const x=(data.flightSchedule||[]).find(v=>v.id===id);if(!x)return;
   if(typeof geConfirmDeleteV234==='function'&&!await geConfirmDeleteV234({title:'Hapus Penerbangan?',item:`${x.flight} • ${x.from}-${x.to} • ${x.date}`,message:'Penerbangan akan dihapus dari referensi Lounge/Tenant Access.'}))return;
-  data.flightSchedule=data.flightSchedule.filter(v=>v.id!==id);save();renderFlightsV236();
+  if(!await geDeleteFirestoreRecord('flightSchedule',id))return;renderFlightsV236();
 }
 function renderFlightsV236(){
   const tbody=document.getElementById('flightRowsV236');if(!tbody)return;const all=(data.flightSchedule||[]).filter(geFlightVisibleV236),q=(flightSearchV236?.value||'').toLowerCase(),a=flightAirportV236?.value||'',s=flightStatusFilterV236?.value||'',d=flightDateFilterV236?.value||'';
@@ -6026,7 +6034,7 @@ resetLoungeAccess=function(){
 function deleteLoungeV239(id){
   if(!(typeof gePlanningCanAction==='function'?gePlanningCanAction('Delete'):(typeof geIsAdmin==='function'&&geIsAdmin()))) return;
   const x=(data.lounges||[]).find(a=>String(a.id)===String(id)); if(!x)return;
-  const run=()=>{data.lounges=(data.lounges||[]).filter(a=>String(a.id)!==String(id));save();renderLounges();renderLoungeCardsV237();geStorageNoticeV223?.('Record Deleted',`${x.name||'Lounge/Tenant'} was deleted successfully.`,'success');};
+  const run=async()=>{if(!await geDeleteFirestoreRecord('lounges',id))return;renderLounges();renderLoungeCardsV237();geStorageNoticeV223?.('Record Deleted',`${x.name||'Lounge/Tenant'} was deleted successfully.`,'success');};
   if(typeof geConfirmDeleteV234==='function') geConfirmDeleteV234({title:'Delete Lounge/Tenant?',item:x.name||'Lounge/Tenant',message:'Master data, pricing, agreement period, and service references will be deleted.'}).then(ok=>{if(ok)run()});
   else if(typeof window.gePortalConfirm==='function') window.gePortalConfirm({title:'Delete Record',message:`Delete ${x.name||'Lounge/Tenant'}? This action cannot be undone.`,confirmLabel:'Delete',cancelLabel:'Cancel',danger:true}).then(ok=>{if(ok)run()});
 }
@@ -6247,7 +6255,7 @@ async function saveServiceProcurementV243(){
 async function deleteServiceProcurementV243(id){
   if(!gePlanningCanManage())return;const x=(data.serviceProcurement||[]).find(v=>v.id===id);if(!x)return;
   const ok=typeof geConfirmDeleteV234==='function'?await geConfirmDeleteV234({title:'Hapus Service?',item:`${x.airport} • ${x.categoryService} • ${x.serviceName}`,message:'Service akan dihapus dari Branch Office Planning.'}):confirm('Hapus service ini?');
-  if(!ok)return;data.serviceProcurement=data.serviceProcurement.filter(v=>v.id!==id);save();renderLoungeProcurement();renderAirportMapMarkers();
+  if(!ok)return;if(!await geDeleteFirestoreRecord('serviceProcurement',id))return;renderLoungeProcurement();renderAirportMapMarkers();
 }
 
 GE_IMPORT_SCHEMA_V223['service-procurement-v243']={
@@ -7451,7 +7459,7 @@ function geV251RenderCalendar(){
 function geV251CalMove(n){if(GE_CAL_VIEW_R2==='month')geV251CalDate=new Date(geV251CalDate.getFullYear(),geV251CalDate.getMonth()+n,1);else if(GE_CAL_VIEW_R2==='week'){geV251CalDate=new Date(geV251CalDate);geV251CalDate.setDate(geV251CalDate.getDate()+7*n)}else{geV251CalDate=new Date(geV251CalDate);geV251CalDate.setDate(geV251CalDate.getDate()+n)}geV251RenderCalendar()}
 function geV251OpenEvent(id=null){if(!geV251Admin())return;const e=id?(geV251Ensure().events||[]).find(x=>String(x.id)===String(id)):null;geV251EventModalTitleR2.textContent=e?'Update Kegiatan':'Tambah Kegiatan';geV251EventIdR2.value=e?.id||'';geV251EventTitle.value=e?.title||'';geV251EventDate.value=e?.date||new Date().toLocaleDateString('en-CA');geV251EventTime.value=e?.time||'';geV251EventAirport.value=e?.airport||'';geV251EventPicR2.value=e?.pic||'';geV251EventTouchpointR2.value=e?.touchpoint||'';geV251EventCategory.value=e?.category||'Meeting';geV251EventPriorityR2.value=e?.priority||'Normal';geV251EventReminderR2.value=String(e?.reminder||0);geV251EventRemark.value=e?.remark||'';geV251DeleteEventR2.style.display=e?'inline-flex':'none';geV251EventModal.classList.add('show')}
 function geV251SaveEventR2(){const title=geV251EventTitle.value.trim(),date=geV251EventDate.value;if(!title||!date)return geStorageNoticeV223('Data belum lengkap','Judul dan tanggal wajib diisi.');const s=geV251Ensure(),id=geV251EventIdR2.value,obj={id:id?Number(id):Date.now(),title,date,time:geV251EventTime.value,airport:geV251EventAirport.value.trim().toUpperCase(),pic:geV251EventPicR2.value.trim(),touchpoint:geV251EventTouchpointR2.value.trim(),category:geV251EventCategory.value,priority:geV251EventPriorityR2.value,reminder:Number(geV251EventReminderR2.value||0),remark:geV251EventRemark.value.trim(),source:'Manual'};const old=(s.events||[]).find(x=>String(x.id)===String(id));if(old)Object.assign(old,obj);else s.events.push(obj);save();geV251EventModal.classList.remove('show');geV251RenderCalendar()}
-async function geV251DeleteEventR2(){const id=geV251EventIdR2.value;if(!id)return;const ok=typeof geConfirmDeleteV234==='function'?await geConfirmDeleteV234({title:'Hapus Kegiatan?',item:geV251EventTitle.value,message:'Kegiatan manual akan dihapus dari kalender.'}):confirm('Hapus kegiatan?');if(!ok)return;const s=geV251Ensure();s.events=s.events.filter(x=>String(x.id)!==String(id));save();geV251EventModal.classList.remove('show');geV251RenderCalendar()}
+async function geV251DeleteEventR2(){const id=geV251EventIdR2.value;if(!id)return;const ok=typeof geConfirmDeleteV234==='function'?await geConfirmDeleteV234({title:'Hapus Kegiatan?',item:geV251EventTitle.value,message:'Kegiatan manual akan dihapus dari kalender.'}):confirm('Hapus kegiatan?');if(!ok)return;if(!await geDeleteFirestoreRecord('events',id))return;geV251EventModal.classList.remove('show');geV251RenderCalendar()}
 function geV251OpenEventDetailR2(id){const e=geV251AllEvents().find(x=>String(x.id)===String(id));if(!e)return;if(e.readOnly){if(e.initiativeId&&typeof openInitiativeTimelineV224==='function')openInitiativeTimelineV224(e.initiativeId);return}geV251OpenEvent(e.id)}
 function geV251CheckRemindersR2(){const now=new Date();geV251AllEvents().filter(e=>e.source==='Manual'&&e.date).forEach(e=>{const due=new Date(`${e.date}T${e.time||'09:00'}:00`),minutes=Number(e.reminder||0),alertAt=new Date(due.getTime()-minutes*60000),key=`calrem_${e.id}_${e.date}_${e.time}_${minutes}`;if(now>=alertAt&&now<due&&geUiGet(key)!=='1'){geUiSet(key,'1');if('Notification'in window&&Notification.permission==='granted')new Notification('Ground Experience Calendar',{body:`${e.title} • ${e.airport||''} ${e.time||''}`});else geStorageNoticeV223('Calendar Reminder',`${e.title} • ${e.date} ${e.time||''}`,'warning')}})}
 window.addEventListener('DOMContentLoaded',()=>{if(document.getElementById('geCalendarV251')){geV251RenderCalendar();setInterval(geV251CheckRemindersR2,60000);geV251CheckRemindersR2()}});
@@ -8613,12 +8621,11 @@ function geCalSaveActivityV2535(){
   if(typeof geCalRenderV2533==='function')geCalRenderV2533();
 }
 
-function geCalDeleteActivityV2535(){
+async function geCalDeleteActivityV2535(){
   const id=geCalElV2535('geV251EventIdR2')?.value||'';
   if(!id)return;
   if(!confirm('Hapus kegiatan ini?'))return;
-  data.events=(data.events||[]).filter(x=>String(x.id)!==String(id));
-  save();
+  if(!await geDeleteFirestoreRecord('events',id))return;
   geCalElV2535('geV251EventModal')?.classList.remove('show');
   if(typeof geCalBuildFiltersV2533==='function')geCalBuildFiltersV2533();
   if(typeof geCalRenderV2533==='function')geCalRenderV2533();

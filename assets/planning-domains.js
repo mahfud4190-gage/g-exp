@@ -128,7 +128,7 @@ async function remove(x){
   if(index<0)throw Error('Record not found. Reload the page.');
   const linked=Object.entries(state||{}).some(([collection,items])=>collection!==x.collection&&Array.isArray(items)&&items.some(v=>v&&typeof v==='object'&&['providerId','sourceRecordId','referenceId','systemId','spaceId','materialId','documentId'].some(key=>String(v[key]||'')===String(x.row.id))));
   if(linked)throw Error('This record is referenced by another record. Deactivate it instead of deleting.');
-  if(x.collection==='groundHandlers'&&arr(records[index].stations).length>1){const remaining=arr(records[index].stations).filter(code=>String(code).toUpperCase()!==String(x.stationCode).toUpperCase());records[index]={...records[index],stations:remaining,station:remaining[0]||''};}else records.splice(index,1);
+  if(x.collection==='groundHandlers'&&arr(records[index].stations).length>1){const remaining=arr(records[index].stations).filter(code=>String(code).toUpperCase()!==String(x.stationCode).toUpperCase());records[index]={...records[index],stations:remaining,station:remaining[0]||''};}else await GEStore.deleteRecord(x.collection,x.row.id);
   auditPlanning('Delete',`${x.collection}: ${label(x.row)} · ${station(x.row)}`);GEStore.save(state);await GEStore.flush();renderDomain();status('Record deleted successfully.');window.geStorageNoticeV223?.('Record Deleted',`${name} was deleted successfully.`,'success');
  }catch(err){status(err?.message||'Unable to delete record.');}
 }

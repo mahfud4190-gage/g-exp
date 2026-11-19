@@ -195,15 +195,15 @@ async function writeOne(db,actor,collection,action,id,raw){
   if(collection==='formSubmissions' && !isOperationalAdmin(actor) && actor.role!=='Super Admin' && action!=='CREATE') throw Object.assign(new Error('Submitted forms cannot be edited by the submitter.'),{statusCode:403,code:'SUBMISSION_IMMUTABLE'});
   const ref=dataRef(db,collection,id?cleanId(id):db.collection('portalData').doc().id);
   if(isExternalActor(actor) && !['initiatives','projectEvents'].includes(collection)) throw Object.assign(new Error(`Write access denied for ${collection}.`),{statusCode:403,code:'FORBIDDEN'});
-  if(action==='DELETE'){
-    const snap=await ref.get(); if(!snap.exists) return {id:ref.id,deleted:false};
+  if(action==='DELETE')return db.runTransaction(async transaction=>{
+    const snap=await transaction.get(ref); if(!snap.exists) return {id:ref.id,deleted:false};
     const prev=snap.data()||{}; if(collection==='touchpoints'&&prev.sourceType==='CSI') throw Object.assign(new Error('CSI touch point cannot be deleted.'),{statusCode:403,code:'CSI_TOUCHPOINT_LOCKED'}); if(isExternalActor(actor)&&!ownsRecord(actor,prev)) throw Object.assign(new Error('External users can only delete their own records.'),{statusCode:403,code:'OWNERSHIP_FORBIDDEN'}); if(!isExternalActor(actor)&&!inScope(actor,prev)) throw Object.assign(new Error('Record outside account scope.'),{statusCode:403,code:'SCOPE_FORBIDDEN'});
     if(collection==='initiatives' && !isExternalActor(actor) && actor.role!=='Super Admin' && !isOperationalAdmin(actor)) throw Object.assign(new Error('Admin access required to delete initiatives.'),{statusCode:403,code:'HIERARCHY_FORBIDDEN'});
-    await ref.delete();
-    await bumpCacheVersion(db,collection);
-    await dataQuery(db,'auditLogs').add({actorId:actor.id,actorRole:actor.role,name:actor.name||actor.username||actor.email||actor.id,username:actor.username||actor.email||'',module:collection,object:ref.id,detail:`${collection} ${action.toLowerCase()}`,targetType:`EDITION1_${collection.toUpperCase()}`,targetId:ref.id,action:'Delete',timestamp:FieldValue.serverTimestamp(),result:'SUCCESS'});
+    transaction.delete(ref);
+    transaction.set(db.collection('portalMetadata').doc('cacheState'),{version:FieldValue.increment(1),updatedAt:FieldValue.serverTimestamp(),lastCollection:collection},{merge:true});
+    transaction.set(dataQuery(db,'auditLogs').doc(),{actorId:actor.id,actorRole:actor.role,name:actor.name||actor.username||actor.email||actor.id,username:actor.username||actor.email||'',module:collection,object:ref.id,detail:`${collection} ${action.toLowerCase()}`,targetType:`EDITION1_${collection.toUpperCase()}`,targetId:ref.id,action:'Delete',timestamp:FieldValue.serverTimestamp(),result:'SUCCESS'});
     return {id:ref.id,deleted:true};
-  }
+  });
   const data=cleanData(raw); const existing=await ref.get(); const prev=existing.exists?existing.data()||{}:{};
   if(collection==='inbox' && action==='UPDATE'){
     if(!existing.exists||!canChangeReadState(actor.id,prev,data))throw Object.assign(new Error('Only your own inbox read state can change.'),{statusCode:403});
@@ -312,18 +312,24 @@ exports.handler=async(event)=>{
       if(action==='BATCH'){
         const changes=Array.isArray(body.changes)?body.changes:[];
         if(!changes.length || changes.length>75) return bad(400,'INVALID_BATCH','Batch must contain 1 to 75 changes.');
+        // Validate the entire batch before starting any writes.
+        if(changes.some(ch=>!['CREATE','UPDATE'].includes(String(ch?.action||'').toUpperCase())))
+          return bad(400,'INVALID_BATCH_ACTION','Batch only accepts CREATE and UPDATE.');
         // One authenticated function request for a bulk import. Writes retain the exact
         // writeOne permission/scope/audit contract, but execute concurrently to remove
         // the previous row-by-row network wait experienced by the browser.
         const result=await Promise.all(changes.map(ch=>{
           const a=String(ch?.action||'').toUpperCase();
-          if(!['CREATE','UPDATE','DELETE'].includes(a)) throw Object.assign(new Error('Invalid batch action.'),{statusCode:400,code:'INVALID_ACTION'});
           return writeOne(db,actor,collection,a,ch?.id,ch?.data||{});
         }));
         return ok({ok:true,source:'Firestore',result});
       }
-      if(!['CREATE','UPDATE','DELETE'].includes(action)) return bad(400,'INVALID_ACTION','Action must be CREATE, UPDATE, DELETE or BATCH.');
-      const result=await writeOne(db,actor,collection,action,body.id,body.data||{}); return ok({ok:true,source:'Firestore',result});
+      if(action==='DELETE')return bad(400,'EXPLICIT_DELETE_REQUIRED','Use the explicit record deletion action.');
+      if(!['CREATE','UPDATE','DELETE_RECORD'].includes(action)) return bad(400,'INVALID_ACTION','Invalid write action.');
+      const deleting=action==='DELETE_RECORD';
+      const id=deleting?cleanId(body.id):body.id;
+      if(deleting && (id.includes('/') || id==='.' || id==='..'))return bad(400,'INVALID_ID','Invalid document id.');
+      const result=await writeOne(db,actor,collection,deleting?'DELETE':action,id,body.data||{}); return ok({ok:true,source:'Firestore',result});
     }
     return bad(405,'METHOD_NOT_ALLOWED','Method not allowed.');
   }catch(e){return bad(e.statusCode||500,e.code||'EDITION1_DATA_ERROR',e.message||'Edition 1 data request failed.');}
