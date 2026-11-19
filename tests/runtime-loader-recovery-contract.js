@@ -6,7 +6,34 @@ const path = require('node:path');
 const vm = require('node:vm');
 const read = file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
 
+function testStylesheetOrder() {
+  const app = read('app.html');
+  assert.match(app, /<link id="geCanonicalUiStyle" rel="stylesheet" href="assets\/global-ui-canonical\.css">/);
+  assert.doesNotMatch(app, /appendChild\(canonicalUi\)/);
+  const base = {href: 'https://gage.test/assets/portal.css'};
+  const canonical = {href: 'https://gage.test/assets/global-ui-canonical.css', before(link) {
+    links.splice(links.indexOf(this), 0, link);
+  }};
+  const links = [base, canonical];
+  const document = {
+    querySelectorAll() { return links; },
+    getElementById(id) { assert.equal(id, 'geCanonicalUiStyle'); return canonical; },
+    createElement(tag) { assert.equal(tag, 'link'); return {}; }
+  };
+  const source = app.slice(app.indexOf(' function ensureStyle('), app.indexOf(' const runtimeGlobals='));
+  const ensureStyle = vm.runInNewContext(source + '\nensureStyle', {document});
+  ensureStyle('assets/portal.css');
+  ensureStyle('assets/edition1-pages.css');
+  ensureStyle('assets/checklist-share.css');
+  ensureStyle('assets/edition1-pages.css');
+  assert.deepEqual(links.map(link => link.href), [
+    base.href, 'assets/edition1-pages.css', 'assets/checklist-share.css', canonical.href
+  ]);
+  assert.equal(links.at(-1), canonical, 'Keep the original canonical stylesheet attached');
+}
+
 async function run() {
+  testStylesheetOrder();
   const scripts = [];
   const document = {
     scripts,

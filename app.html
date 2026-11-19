@@ -1,6 +1,6 @@
 <!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ground Experience Portal</title>
 <style>html,body{background:#f4f7fb}#cleanPageOutlet{overflow-anchor:none}.clean-page-loading{display:none}</style>
-<link rel="stylesheet" href="assets/portal.css"><link rel="stylesheet" href="assets/clean-shell.css"><link rel="stylesheet" href="assets/global-ui-canonical.css">
+<link rel="stylesheet" href="assets/portal.css"><link rel="stylesheet" href="assets/clean-shell.css"><link id="geCanonicalUiStyle" rel="stylesheet" href="assets/global-ui-canonical.css">
 <script>try{document.documentElement.classList.add('ge-portal-density');if((localStorage.getItem('GE_SIDEBAR_COLLAPSED') ?? localStorage.getItem('GE_V257_SIDEBAR_COLLAPSED'))==='1')document.documentElement.classList.add('ge-precollapsed')}catch(e){}</script><script src="assets/portal-shell.js"></script><script src="assets/firebase-config.js"></script><script src="assets/firebase-client.js"></script><script src="assets/auth.js"></script><script src="assets/clean-page-registry.js"></script></head><body id="top" class="e1-page"><header class="top"></header><div class="shell"><aside class="side"></aside><main class="main" id="cleanPageOutlet"><div class="clean-page-loading" aria-hidden="true"></div></main></div><footer class="footer"><b>GROUND EXPERIENCE — GARUDA INDONESIA</b><br>Portal Service Experience</footer><button aria-label="Kembali ke atas" class="back-to-top" id="backToTop">↑</button>
 <script src="assets/edition1-overlay-manager.js"></script><script src="assets/clean-route-adapter.js"></script><script src="assets/table-runtime.js"></script><script src="assets/portal-ui-runtime.js"></script><script src="assets/cache-runtime.js"></script><script>
 (function(){
@@ -8,7 +8,13 @@
  const planningRoutes=new Set(['planning-workspace','service-provider','lounge-list','space-building','station-resources','airport-systems-planning','planning-documents-hub','planning-standards','airport-cost-structure']);
  function routeUrl(target){try{return new URL(target||location.href,location.href)}catch{return new URL(location.href)}}
  function resolveRoute(url){const params=url.searchParams;let route=String(params.get('page')||'index').trim().toLowerCase();if(route==='app')route='index';const alias=(window.GE_ROUTE_ALIASES||{})[route];if(alias){const parts=String(alias).split('?');route=parts[0];if(parts[1])new URLSearchParams(parts[1]).forEach((v,k)=>{if(!params.has(k))params.set(k,v)});}params.set('page',route);return {route,params,url};}
- function ensureStyle(href){if([...document.querySelectorAll('link[rel="stylesheet"]')].some(x=>x.href&&x.href.includes(href.split('?')[0])))return;const l=document.createElement('link');l.rel='stylesheet';l.href=href;document.head.appendChild(l);}
+ function ensureStyle(href){
+  if([...document.querySelectorAll('link[rel="stylesheet"]')].some(link=>link.href&&link.href.includes(href.split('?')[0])))return;
+  const link=document.createElement('link');
+  link.rel='stylesheet';
+  link.href=href;
+  document.getElementById('geCanonicalUiStyle').before(link);
+ }
  const runtimeGlobals={
   'assets/edition1-store.js':{name:'GEStore',method:'waitAuth'},
   'assets/edition1-files.js':{name:'GEFiles',source:'Firebase Storage'}
@@ -65,7 +71,6 @@
    document.title=def.title+' — Ground Experience Portal';outlet.innerHTML=def.html;
    if(route==='admin'&&window.gxGetSession?.()?.role!=='Super Admin'){outlet.querySelectorAll('.admin-section-tab').forEach(b=>{if(/Activity Log|Portal Management/.test(b.textContent))b.remove()});outlet.querySelector('#adminSectionAudit')?.remove();outlet.querySelector('#adminSectionPortal')?.remove();}
    for(const href of def.styles||[])ensureStyle(href);
-   const canonicalUi=[...document.querySelectorAll('link[rel="stylesheet"]')].find(x=>x.href&&x.href.includes('/assets/global-ui-canonical.css'));if(canonicalUi)document.head.appendChild(canonicalUi);
    if(['cx-import','customer-experience'].includes(route)){await loadSrc('assets/edition1-store.js');await window.GEStore.hydrate(['customerExperience']);}
    for(const item of def.scripts||[]){if(item.src){await loadSrc(item.src,planningRoutes.has(route)&&item.src.includes('planning-domains.js'));}else if(item.code){(0,eval)(item.code);}}
    if(typeof window.geEdition1PageBoot==='function')await window.geEdition1PageBoot(route);
