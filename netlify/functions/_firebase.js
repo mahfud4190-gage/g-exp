@@ -19,7 +19,9 @@ function getServiceAccount() {
       private_key: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
     };
   }
-  throw new Error('Firebase Admin credentials are not configured.');
+  throw Object.assign(new Error('Penyimpanan belum terhubung. Hubungi administrator portal.'), {
+    statusCode: 503, code: 'FIREBASE_ADMIN_UNCONFIGURED'
+  });
 }
 
 function firebase() {

@@ -17,3 +17,13 @@ npm run build lulus, termasuk pengaman penghapusan dan loader recovery. Uji simu
 Delta ini mencakup seluruh perubahan Runtime & Upload sebelumnya. Dialog portal mendapat ukuran viewport penuh pada densitas desktop dan mobile. Skala desktop untuk konten portal berasal dari aturan densitas yang sudah ada. Hasil visual di deploy belum diverifikasi.
 
 Lounge/Tenant menggunakan Template_Layanan_Lounge_Tenant_P29.csv. Importer menerima nama kolom versi sebelumnya (misalnya airport dan serviceCategory), koma atau titik koma, dan menyebut kolom wajib saat header tidak sesuai. Uji lokal mencakup template P29 asli yang diisi satu baris, template lama, dan CSV titik koma dengan tanggal serial. Ketiganya menampilkan hasil dan menjalankan POST CREATE terhadap API simulasi. Perubahan parser ini berlaku pada Lounge/Tenant.
+
+## Ukuran dialog dan penyimpanan impor
+
+Backdrop memenuhi viewport. Kartu dialog mengikuti skala portal desktop dan tetap dipusatkan. Petunjuk Lounge/Tenant memakai bahasa Indonesia yang ringkas dan menyediakan tautan unduh template dalam dialog.
+
+Jika Firebase Admin belum dikonfigurasi, permintaan ditolak sebelum operasi penulisan. Import Lounge/Tenant menampilkan pesan yang sesuai dan menjaga data percobaan di luar daftar sampai server mengonfirmasi simpan. Percobaan ulang menggunakan ID yang sama.
+
+Pada site Netlify yang mengalami error, cek Project configuration > Environment variables. Isi FIREBASE_SERVICE_ACCOUNT_JSON menggunakan service account project Firebase portal. Kode juga mendukung kombinasi FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, dan FIREBASE_PRIVATE_KEY. Aktifkan untuk Functions pada konteks deploy yang digunakan, lalu buat deploy baru. Simpan nilai hanya di pengaturan Netlify.
+
+Verifikasi lokal: build lulus. Simulasi kredensial hilang memastikan dialog tetap terbuka, perjanjian belum masuk daftar, dan retry mempertahankan ID. Geometri dialog dan konfigurasi penyimpanan pada Netlify belum diverifikasi.

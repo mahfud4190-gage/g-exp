@@ -5092,17 +5092,17 @@ function geImportSimpleV231(type,rows){
  const gm={'gaso-master':'gasoMaster','gaso-support':'gasoServiceSupport','gaso-planning':'gasoPlanningService'};if(gm[type]){rows.forEach(r=>{if(!r.code){skipped++;return}const obj={id:Date.now()+added,...r,code:String(r.code).trim().toUpperCase()};if('amount'in obj)obj.amount=Number(obj.amount||0);data[gm[type]].push(obj);added++});save();renderGasoAllV231();return{added,skipped}}
  return null;
 }
-async function geConfirmImportPersistedV240(result,successMessage){
+async function geConfirmImportPersistedV240(result,successMessage,persist){
  if(!result)return false;
  const state=GE_BULK_IMPORT_V223;
  const button=document.getElementById('bulkImportConfirmV223');
  const label=button?.textContent;
- state.pending={result,successMessage};
+ state.pending={result,successMessage,persist};
  const file=document.getElementById('bulkImportFileV223');
  if(file)file.disabled=true;
  if(button){button.disabled=true;button.textContent='Menyimpan…'}
  try{
-  await store.flush();
+  if(persist)await persist();else await store.flush();
   if(GE_BULK_IMPORT_V223===state){
    state.pending=null;
    closeBulkImportV223();
@@ -5113,7 +5113,11 @@ async function geConfirmImportPersistedV240(result,successMessage){
   if(GE_BULK_IMPORT_V223===state){
    const preview=document.getElementById('bulkImportPreviewV223');
    preview?.querySelector('[data-save-error]')?.remove();
-   preview?.insertAdjacentHTML('beforeend',`<p data-save-error role="alert">Impor belum selesai. Sebagian baris mungkin sudah tersimpan. ${geEsc(e?.message||String(e))}</p>`);
+   const unconfigured=e?.code==='FIREBASE_ADMIN_UNCONFIGURED'||e?.message==='Firebase Admin credentials are not configured.';
+   const detail=unconfigured
+    ?'Penyimpanan belum terhubung. Data dari percobaan ini belum tersimpan. Hubungi administrator portal.'
+    :'Penyimpanan terhenti. Periksa daftar data sebelum mencoba lagi.';
+   preview?.insertAdjacentHTML('beforeend',`<div class="bulk-import-save-alert" data-save-error role="alert"><strong>Impor belum selesai.</strong><p>${detail}</p></div>`);
   }
   return false;
  }finally{
@@ -5123,7 +5127,7 @@ async function geConfirmImportPersistedV240(result,successMessage){
 }
 async function confirmBulkImportV231(){
  const {type,rows,pending}=GE_BULK_IMPORT_V223;
- if(pending){save();return geConfirmImportPersistedV240(pending.result,pending.successMessage)}
+ if(pending){if(!pending.persist)save();return geConfirmImportPersistedV240(pending.result,pending.successMessage,pending.persist)}
  if(!rows.length)return;let result;
  if(['airport','personnel','station-material','airport-system-v231','gaso-master','gaso-support','gaso-planning'].includes(type))result=geImportSimpleV231(type,rows);
  else if(type==='lounge')result=geImportLoungeV230(rows);
@@ -9578,9 +9582,9 @@ window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiative
       const dup=group&&!group.error&&existingDuplicate(group.model);if(dup)errs.push('Potential duplicate existing agreement');
       const ok=!errs.length;
       const p=m.priceSchedules?.[0];
-      return `<tr><td>${item.rowNumber}</td><td>${esc(m.airport||'-')}</td><td>${esc(m.serviceType||'-')}</td><td>${esc(m.name||'-')}</td><td>${esc(m.documentNumber||'-')}</td><td>${esc(m.startDate||'-')} — ${esc(m.endDate||'-')}</td><td>${esc(p?safePriceDisplay(p.currency,p.price):safePriceDisplay(m.currency,m.pricePerPax))}${p?`<br><small>${esc(p.effectiveFrom)} — ${esc(p.effectiveTo)}</small>`:''}</td><td><span class="ge-p29-import-status ${ok?'ok':'invalid'}">${ok?'CREATE':'INVALID'}</span></td><td>${esc(errs.join('; ')||'Ready')}</td></tr>`;
+      return `<tr><td>${item.rowNumber}</td><td>${esc(m.airport||'-')}</td><td>${esc(m.serviceType||'-')}</td><td>${esc(m.name||'-')}</td><td>${esc(m.documentNumber||'-')}</td><td>${esc(m.startDate||'-')} — ${esc(m.endDate||'-')}</td><td>${esc(p?safePriceDisplay(p.currency,p.price):safePriceDisplay(m.currency,m.pricePerPax))}${p?`<br><small>${esc(p.effectiveFrom)} — ${esc(p.effectiveTo)}</small>`:''}</td><td><span class="ge-p29-import-status ${ok?'ok':'invalid'}">${ok?'Siap diimpor':'Perlu diperbaiki'}</span></td><td>${esc(errs.join('; ')||'—')}</td></tr>`;
     }).join('');
-    return `<div class="ge-p29-import-summary"><span>Total <b>${summary.total}</b></span><span>Valid <b>${summary.valid}</b></span><span>Warnings <b>${summary.warnings}</b></span><span>Invalid <b>${summary.invalid}</b></span></div><div class="bulk-preview-table ge-p29-import-table"><table><thead><tr><th>Row</th><th>Station</th><th>Type</th><th>Provider</th><th>Agreement Number</th><th>Agreement Period</th><th>Price / Price Period</th><th>Status</th><th>Validation Message</th></tr></thead><tbody>${rows||'<tr><td colspan="9">Tidak ada data</td></tr>'}</tbody></table></div><p class="ge-p29-import-note">Import mode: CREATE-only. Baris invalid dan duplicate tidak ditulis. Baris multi-price dengan Agreement Number yang sama digabung menjadi satu Agreement dengan beberapa Price Period.</p>`;
+    return `<div class="ge-p29-import-summary"><span>Total <b>${summary.total}</b></span><span>Siap diimpor <b>${summary.valid}</b></span><span>Dilewati <b>${summary.invalid}</b></span></div><div class="bulk-preview-table ge-p29-import-table"><table><thead><tr><th>Row</th><th>Station</th><th>Type</th><th>Provider</th><th>Agreement Number</th><th>Agreement Period</th><th>Price / Price Period</th><th>Status</th><th>Validation Message</th></tr></thead><tbody>${rows||'<tr><td colspan="9">Tidak ada data</td></tr>'}</tbody></table></div><p class="ge-p29-import-note">Hanya perjanjian baru yang diimpor. Baris dengan nomor perjanjian yang sama dapat memuat beberapa periode tarif.</p>`;
   }
 
   const originalOpen=openBulkImportV223;
@@ -9590,7 +9594,7 @@ window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiative
     if(!canUpload())return;
     state.importRows=[];state.importGroups=[];state.importSummary=null;state.importFileName='';
     const title=document.getElementById('bulkImportTitleV223'),help=document.getElementById('bulkImportHelpV223'),file=document.getElementById('bulkImportFileV223'),preview=document.getElementById('bulkImportPreviewV223'),confirm=document.getElementById('bulkImportConfirmV223'),modal=document.getElementById('bulkImportModalV223');
-    if(title)title.textContent='Upload CSV Layanan Lounge / Tenant';if(help)help.textContent='Gunakan CSV Template P29. Parse → Normalize → Validate → Preview → Confirm → Import. Multi-price memakai satu Agreement Number pada beberapa baris.';if(file)file.value='';if(preview)preview.innerHTML='<div class="bulk-import-idle">Belum ada file dipilih.</div>';if(confirm)confirm.disabled=true;modal?.classList.add('show');
+    if(title)title.textContent='Impor Data Lounge / Tenant';if(help)help.textContent='Pilih file sesuai template, lalu periksa pratinjau sebelum menyimpan.';if(file)file.value='';if(preview)preview.innerHTML='<div class="bulk-import-idle">Belum ada file dipilih.</div>';if(confirm)confirm.disabled=true;modal?.classList.add('show');
   };
 
   window.previewBulkImportV223=async function(file){
@@ -9598,7 +9602,7 @@ window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiative
     if(!file)return;
     const preview=document.getElementById('bulkImportPreviewV223'),confirm=document.getElementById('bulkImportConfirmV223');
     if(!canUpload())return;
-    preview.innerHTML='<div class="bulk-import-loading">Membaca, menormalisasi, dan memvalidasi file…</div>';if(confirm)confirm.disabled=true;
+    preview.innerHTML='<div class="bulk-import-loading">Memeriksa file…</div>';if(confirm)confirm.disabled=true;
     try{
       const rows=await readLoungeImport(file);
       if(!rows.length)throw Error('Template belum memiliki baris data. Isi minimal satu baris sebelum upload.');
@@ -9616,10 +9620,15 @@ window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiative
     if(!state.importFileName||!canUpload())return;
     const groups=state.importGroups.filter(group=>group.model&&!group.error&&!existingDuplicate(group.model));
     if(!groups.length){notice('Import Tidak Dilakukan','Tidak ada agreement valid untuk disimpan.','warning');return}
-    data.lounges.push(...groups.map(group=>({...group.model,id:crypto.randomUUID(),no:'',documentName:'',documentKey:''})));
-    save();
+    const records=groups.map(group=>({...group.model,id:crypto.randomUUID(),no:'',documentName:'',documentKey:''}));
+    const persist=async()=>{
+      store.save({lounges:records});
+      await store.flush();
+      const existing=new Set(data.lounges.map(row=>String(row.id)));
+      data.lounges.push(...records.filter(row=>!existing.has(row.id)));
+    };
     const skipped=state.importSummary?.invalid||0;
-    if(await geConfirmImportPersistedV240({added:groups.length},`${groups.length} agreement tersimpan • ${skipped} baris dilewati.`)){
+    if(await geConfirmImportPersistedV240({added:groups.length},`${groups.length} perjanjian tersimpan · ${skipped} baris dilewati.`,persist)){
       state.importFileName='';
       window.dispatchEvent(new CustomEvent('gx-data-hydrated',{detail:{collections:['lounges']}}));
     }
@@ -9632,7 +9641,7 @@ window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiative
       layer=document.createElement('div');
       layer.id='bulkImportModalV223';
       layer.className='modal-backdrop';
-      layer.innerHTML='<div class="modal-card"><h2 id="bulkImportTitleV223"></h2><p id="bulkImportHelpV223"></p><input type="file" id="bulkImportFileV223" accept=".xlsx,.csv"><div id="bulkImportPreviewV223" aria-live="polite"></div><div class="modal-actions"><button type="button" class="ge-btn" data-cancel>Batal</button><button type="button" class="ge-btn primary" id="bulkImportConfirmV223" disabled>Import Data</button></div></div>';
+      layer.innerHTML='<div class="modal-card"><div class="lounge-import-heading"><h2 id="bulkImportTitleV223"></h2><p id="bulkImportHelpV223"></p></div><div class="lounge-import-file"><label for="bulkImportFileV223">File CSV atau XLSX</label><a href="templates/Template_Layanan_Lounge_Tenant_P29.csv" download>Unduh template</a><input type="file" id="bulkImportFileV223" accept=".xlsx,.csv"></div><div id="bulkImportPreviewV223" aria-live="polite"></div><div class="modal-actions"><button type="button" class="ge-btn" data-cancel>Batal</button><button type="button" class="ge-btn primary" id="bulkImportConfirmV223" disabled>Impor Data</button></div></div>';
       document.querySelector('#cleanPageOutlet').appendChild(layer);
       layer.querySelector('[data-cancel]').onclick=closeBulkImportV223;
       layer.querySelector('#bulkImportFileV223').onchange=e=>window.previewBulkImportV223(e.currentTarget.files[0]);

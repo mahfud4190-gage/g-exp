@@ -90,7 +90,7 @@
       t=await token(true);
       r=await fetchWithTimeout('/api/edition1-data',{method:'POST',headers:{Authorization:'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify(body)});
     }
-    const p=await r.json().catch(()=>({})); if(!r.ok)throw new Error(p.message||`Save request failed (${r.status}).`); return p.result;
+    const p=await r.json().catch(()=>({})); if(!r.ok)throw Object.assign(new Error(p.message||`Save request failed (${r.status}).`),{code:p.code,status:r.status}); return p.result;
   }
   async function apiPostBatch(collection,changes){
     if(!changes.length)return [];

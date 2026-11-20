@@ -536,6 +536,40 @@ html.ge-portal-density {
 html.ge-portal-density body > :is(.ge-viewport-overlay,.ge-portal-overlay,.ge-confirm-layer,.planning-dialog-layer,.ge-id-backdrop,.ge-ref-backdrop,.ge-modal-backdrop,.overlay-backdrop,[data-modal-root],dialog[open]) {
   zoom: calc(1 / var(--ge-portal-zoom));
 }
+/* The backdrop uses the viewport; the dialog card follows portal density. */
+html.ge-portal-density body > :is(.ge-viewport-overlay,.ge-portal-overlay,.ge-confirm-layer,.planning-dialog-layer,.ge-id-backdrop,.ge-ref-backdrop,.ge-modal-backdrop,.overlay-backdrop,[data-modal-root]) > :is(.ge-viewport-overlay-card,.modal-card,.initiative-dialog-card,.ge-confirm-card,.planning-dialog,.ge-id-modal,.ge-ref-modal,.tp-modal,.map-move-modal-card) {
+  zoom: var(--ge-portal-zoom);
+}
+.lounge-import-heading h2 { margin: 0 0 8px; }
+.lounge-import-heading p { margin: 0; color: #46627b; }
+.lounge-import-file {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 16px;
+  align-items: center;
+  margin: 18px 0;
+}
+.lounge-import-file label { font-weight: 650; }
+.lounge-import-file input { grid-column: 1 / -1; }
+.lounge-import-file input::file-selector-button {
+  border: 1px solid #c2d4e6;
+  border-radius: 6px;
+  background: #eef4fa;
+  color: #12365b;
+  padding: 6px 10px;
+  margin-inline-end: 10px;
+  cursor: pointer;
+}
+.bulk-import-save-alert {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid #f0c5c5;
+  border-radius: 8px;
+  background: #fff4f4;
+  color: #862a2a;
+}
+.bulk-import-save-alert p { margin: 4px 0 0; }
+
 @media(max-width:1100px){#cleanPageOutlet .airport-map-shell-v216{grid-template-columns:1fr}#cleanPageOutlet .planning-filter-grid,#cleanPageOutlet #loungeFilterGridR4,#cleanPageOutlet .lounge-filter-grid-ref{grid-template-columns:repeat(2,minmax(0,1fr))}#cleanPageOutlet .p31.p3-user-page>.cards{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:760px){#cleanPageOutlet #r43Monitoring .ge-assess-tabs{gap:0}#cleanPageOutlet #r43Monitoring .ge-assess-tab{padding:0 10px}#cleanPageOutlet #r43Monitoring .ge-submission-toolbar,#cleanPageOutlet .planning-filter-grid,#cleanPageOutlet #loungeFilterGridR4,#cleanPageOutlet .lounge-filter-grid-ref{grid-template-columns:1fr}#cleanPageOutlet .planning-domain-grid-view{grid-template-columns:1fr}#cleanPageOutlet .planning-record-card{grid-template-columns:72px minmax(0,1fr);padding:15px;gap:12px}#cleanPageOutlet .planning-record-body dl{grid-template-columns:1fr}#cleanPageOutlet .p31.p3-user-page>.head{flex-direction:column}#cleanPageOutlet .p31.p3-user-page>.cards,#cleanPageOutlet .p31.p3-user-page>.grid2{grid-template-columns:1fr}}
 
