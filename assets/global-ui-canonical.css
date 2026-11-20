@@ -385,10 +385,13 @@ html body>.initiative-dialog .ge-picker-pop{z-index:2147482500}
 .ge-assess-tabs{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0 18px;border-bottom:1px solid #d7e2ec}
 .ge-assess-tabs>button{
   min-block-size:var(--ui-control-h);
+  appearance:none;
   padding:0 14px;
   border:0;
   border-block-end:2px solid transparent;
+  border-radius:0;
   background:transparent;
+  box-shadow:none;
   color:#63788d;
   font-family:inherit;
   font-size:var(--ui-button-font);

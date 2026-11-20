@@ -12,6 +12,8 @@ function assertStyles(){
   assert.equal(tabRule?.length,1);
   assert.match(tabRule[0],/font-size:var\(--ui-button-font\)/);
   assert.match(tabRule[0],/font-weight:var\(--ui-button-weight\)/);
+  assert.match(tabRule[0],/border-radius:0/);
+  assert.match(tabRule[0],/border-block-end:2px solid transparent/);
   assert.match(css,/\.ge-native-dialog\{[^}]+max-block-size:calc\(100dvh - 32px\)/);
   assert.match(css,/\.ge-checklist-share-body\{[^}]+overflow:auto/);
   assert.match(css,/\.ge-checklist-share-result:not\(\[hidden\]\)\{display:grid/);
@@ -19,6 +21,26 @@ function assertStyles(){
   assert.match(css,/\.ge-table-action-cell[^{}]*\{[^}]+min-inline-size: max-content/);
   assert.match(css,/dialog\[open\]\) > :is\([^}]+\.ge-native-dialog-card\) \{\s*zoom: var\(--ge-portal-zoom\)/);
   assert.match(read('assets/edition1-business-runtime.js'),/class="ge-native-dialog-card ge-map-gallery-card"/);
+}
+
+function assertTabsKeepTheirOwnStyle(){
+  function button(textContent,tab=false){
+    const classes=new Set(tab?['ge-assess-tab']:[]);
+    return {textContent,classes,classList:{contains:value=>classes.has(value),add:value=>classes.add(value)},
+      matches:selector=>tab&&selector.split(',').includes('.ge-assess-tabs>button')};
+  }
+  const tabs=['Overview','Monitoring Works','Form Templates','Submissions'].map(label=>button(label,true));
+  const add=button('Add Monitoring Work');
+  // Use the portal's real normalization entry point on first load and after refresh.
+  const document={readyState:'loading',addEventListener(){},querySelectorAll(selector){
+    return selector.includes('#r43Monitoring button')?[...tabs,add]:[];
+  }};
+  const window={};
+  vm.runInNewContext(read('assets/portal-ui-runtime.js'),{window,document,MutationObserver:class{},location:{search:''},URLSearchParams});
+  window.gePortalApplyStandards();
+  window.gePortalApplyStandards();
+  for(const tab of tabs)assert.deepEqual([...tab.classes],['ge-assess-tab']);
+  assert.deepEqual([...add.classes],['ge-btn','primary']);
 }
 
 function assertMonitoringViews(){
@@ -99,6 +121,7 @@ function assertTableActions(){
 
 (async()=>{
   assertStyles();
+  assertTabsKeepTheirOwnStyle();
   await assertMonitoringViews();
   assertTableActions();
   console.log('MONITORING_LAYOUT_CONTRACT_PASS');

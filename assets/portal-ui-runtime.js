@@ -7,7 +7,20 @@ function promoteOverlays(root=document){
  root.querySelectorAll?.('[id*="Modal"],[id*="Dialog"]').forEach(el=>{if(el.matches('dialog'))return;const open=el.classList.contains('show')||el.hasAttribute('open')||el.getAttribute('aria-hidden')==='false';const wrapper=el.matches('.modal-backdrop,.overlay-backdrop,.initiative-dialog,[data-modal-root]')||!!el.querySelector('.modal-card,.initiative-dialog-card,.planning-modal,.ge-id-modal,.ge-ref-modal');if(open&&wrapper&&!items.includes(el))items.push(el)});
  items.forEach(el=>{if(el.parentElement!==document.body){if(window.geMovePortalOverlay)window.geMovePortalOverlay(el);else document.body.appendChild(el);}if(!el.classList.contains('ge-portal-overlay'))el.classList.add('ge-portal-overlay');if(!el.getAttribute('role'))el.setAttribute('role','dialog');if(el.getAttribute('aria-modal')!=='true')el.setAttribute('aria-modal','true')})
 }
-function normalizeButtons(root=document){root.querySelectorAll?.('.initiative-dialog button,.modal-card button,.planning-modal button,.ge-id-modal button,.ge-ref-modal button,#r43Monitoring button').forEach(b=>{if(b.matches('.modal-x,.planning-modal-close,.ge-picker-trigger-r11,.ge-form-section-select,.ge-form-field-select'))return;if(!b.classList.contains('ge-btn')&&!b.classList.contains('btn'))b.classList.add('ge-btn');const t=(b.textContent||'').trim().toLowerCase();if(/delete|hapus|remove/.test(t)){if(!b.classList.contains('danger'))b.classList.add('danger')}else if(/save|submit|publish|create|add|apply|update|confirm|simpan|tambah/.test(t)&&!b.classList.contains('danger')&&!b.classList.contains('primary'))b.classList.add('primary')})}
+function normalizeButtons(root=document){
+ const targets='.initiative-dialog button,.modal-card button,.planning-modal button,.ge-id-modal button,.ge-ref-modal button,#r43Monitoring button';
+ const custom='.modal-x,.planning-modal-close,.ge-picker-trigger-r11,.ge-form-section-select,.ge-form-field-select,.ge-assess-tabs>button';
+ root.querySelectorAll?.(targets).forEach(button=>{
+  if(button.matches(custom))return;
+  if(!button.classList.contains('ge-btn')&&!button.classList.contains('btn'))button.classList.add('ge-btn');
+  const label=(button.textContent||'').trim().toLowerCase();
+  if(/delete|hapus|remove/.test(label)){
+   if(!button.classList.contains('danger'))button.classList.add('danger');
+  }else if(/save|submit|publish|create|add|apply|update|confirm|simpan|tambah/.test(label)&&!button.classList.contains('danger')&&!button.classList.contains('primary')){
+   button.classList.add('primary');
+  }
+ });
+}
 function normalizeMap(){document.querySelectorAll('.map-region-cards,.map-region-cards-v216').forEach(el=>{if(!el.hidden)el.hidden=true;if(el.getAttribute('aria-hidden')!=='true')el.setAttribute('aria-hidden','true')})}
 function normalizePageTitle(){const route=new URLSearchParams(location.search).get('page');if(!route)return;const subpages=new Set(['lounge-list','service-provider','space-building','station-resources','airport-systems-planning','planning-documents-hub','planning-standards','airport-cost-structure','branch-office-planning','gaso-planning','planning-documents']);if(subpages.has(route))return;const candidates=[...document.querySelectorAll('.ge-nav-link.active,.ge-nav-link[aria-current="page"],nav a.active,.sidebar a.active')];const active=candidates.find(a=>{const href=a.getAttribute('href')||'';return href.includes('page='+route)||href.endsWith('/'+route+'.html')||href.endsWith(route+'.html')});const label=active?.querySelector('span:not(.ni)')?.textContent?.trim()||active?.textContent?.trim();if(!label)return;const title=document.querySelector('#cleanPageOutlet .ge-page-head h1,#cleanPageOutlet .hero h2,#cleanPageOutlet h1');if(title&&title.dataset.subpageTitle!=="1"&&title.textContent!==label)title.textContent=label}
 function apply(){if(typeof window.GE_MAP_REGION==='undefined')window.GE_MAP_REGION='';promoteOverlays(document);normalizeButtons(document);normalizeMap();normalizePageTitle()}
