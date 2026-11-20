@@ -144,6 +144,30 @@
     const previous=pending.catch(()=>undefined); pending=previous.then(()=>persistSnapshot(snapshot,queuedDeletions)).catch(err=>{console.error('[Edition1 Firebase Store]',err);window.dispatchEvent(new CustomEvent('gx-data-save-error',{detail:err}));throw err});
     return next;
   }
+  function saveRecord(key,action,id,record){
+    const recordId=String(id??'').trim();
+    if(!recordId||!Array.isArray(state[key])||!['CREATE','UPDATE'].includes(action))
+      return Promise.reject(new Error('Data untuk disimpan tidak valid.'));
+    localRevision++;
+    const task=pending.catch(()=>undefined).then(async()=>{
+      const keyOnServer=collKey(key);
+      const persisted=await apiPost({collection:keyOnServer,action,id:recordId,data:record});
+      if(String(persisted?.id??'')!==recordId)throw new Error('Server belum mengonfirmasi penyimpanan.');
+      const saved=normalizeCollection(key,[persisted])[0];
+      const replace=rows=>{
+        const updated=indexById(rows);
+        updated.set(recordId,saved);
+        return [...updated.values()];
+      };
+      localRevision++;
+      state[key]=replace(state[key]);
+      baseline[key]=clone(replace(baseline[key]||[]));
+      if(cacheAllowed()){await writeCache(key,baseline[key]);await clearManifestCache();}
+      return saved;
+    });
+    pending=task;
+    return task;
+  }
   // Import only writes the records in this file, using the same authenticated API as other saves.
   function importInitiatives(prepare){
     localRevision++;
@@ -330,6 +354,6 @@
   }
   async function loadInboxThread(id){const t=await token(),r=await fetchWithTimeout('/api/edition1-data?thread='+encodeURIComponent(id),{headers:{Authorization:'Bearer '+t},cache:'no-store'}),p=await r.json();if(!r.ok)throw Error(p.message||'Conversation could not be loaded.');return p.thread||[]}
   async function replyInbox(id,body){const result=await apiPost({collection:'inbox',action:'CREATE',id:globalThis.crypto?.randomUUID?.()||String(Date.now()),data:{replyToId:String(id),body:String(body||'').trim()}});await clearManifestCache();return result}
-  window.data=state; window.GEStore={get:()=>state,save,importInitiatives,deleteRecord,hydrate,refresh,waitAuth,markInboxRead,loadInboxThread,replyInbox,isHydrated:()=>hydrated,flush:()=>pending,source:'Firestore',projectId:window.GX_FIREBASE_CONFIG?.projectId||''};
+  window.data=state; window.GEStore={get:()=>state,save,saveRecord,importInitiatives,deleteRecord,hydrate,refresh,waitAuth,markInboxRead,loadInboxThread,replyInbox,isHydrated:()=>hydrated,flush:()=>pending,source:'Firestore',projectId:window.GX_FIREBASE_CONFIG?.projectId||''};
   window.addEventListener('gx-data-save-error',e=>{if(e.detail?.message)console.error('Firestore save failed:',e.detail.message)});
 })();

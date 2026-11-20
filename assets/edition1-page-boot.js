@@ -7,7 +7,7 @@ const config={
  'service-planning':{perm:'planning',collections:['stationMaterials','lounges','boSpaces','airportSystems','touchpointStandards','documents','serviceProcurement']},
  'calendar':{perm:'initiatives',collections:['initiatives','projectEvents','touchpoints','inbox','airports']},
  'planning-documents':{perm:'planning',collections:['documents','initiatives']},
- 'data':{perm:'data',collections:['airports','personnel']},
+ 'data':{perm:'data',collections:['airports','personnel','lounges','loungeVisitors','documents','referenceCatalog']},
  'admin':{perm:'admin',collections:['users','inbox','contactMessages','auditLogs','airports','lounges']},
  'berita':{perm:'news',collections:['articles','announcements','faqs','news','documents']},
  'kontak':{perm:'contact',collections:['contactMessages','inbox']},

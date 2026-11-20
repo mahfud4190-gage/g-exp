@@ -227,11 +227,14 @@ function renderInitiatives(){
  renderInitiativeCharts();
 }
 function setJourneyFilter(journey){
- activeJourney=journey||'';
- document.querySelectorAll('.journey-tab').forEach(x=>
-   x.classList.toggle('active',x.dataset.journey===activeJourney)
- );
- renderInitiatives();
+ activeJourney=String(journey||'');
+ window.GE_ACTIVE_JOURNEY=activeJourney;
+ document.querySelectorAll('.journey-tab[data-journey]').forEach(button=>{
+   const selected=button.dataset.journey===activeJourney;
+   button.classList.toggle('active',selected);
+   button.setAttribute('aria-pressed',String(selected));
+ });
+ window.renderInitiatives?.();
 }
 function addInitiative(){
  const tp=(document.getElementById('itp')?.value||'').trim();
@@ -412,7 +415,7 @@ const airportMapInfo={
 function showAirportTooltip(ev,code){
  const t=document.getElementById('mapTooltip'),m=document.getElementById('interactiveMap'),d=airportMapInfo[code];
  if(!t||!m||!d)return;
- const mr=m.getBoundingClientRect(),er=ev.currentTarget.getBoundingClientRect();
+ const mr=m.getBoundingClientRect(),er=marker.getBoundingClientRect();
  t.innerHTML=`<b>${d.code} — ${d.name}</b><small>${d.city} • ${d.region}</small><small>Status: ${d.status} · Pending: ${d.pending}</small><small>Visitor Lounge: ${d.visitor}</small>`;
  t.style.left=(er.left-mr.left+er.width/2)+'px';
  t.style.top=(er.top-mr.top)+'px';
@@ -479,19 +482,43 @@ function renderDocumentsHome(){
 }
 function renderDocumentsAdmin(){
  const box=document.getElementById('documentAdminList');if(!box)return;
- box.innerHTML=(data.documents||[]).map(x=>`<div class="document-row"><div><b>${x.title}</b><small>${x.fileName}</small></div><span>${x.category}</span><span>${x.source}</span><span>${x.date}</span><div>${x.blobKey?`<button class="ge-btn secondary" onclick="GEFiles.download('${x.blobKey}','${String(x.fileName).replaceAll("'","")}')">Download</button>`:''} <button class="ge-btn" data-role-min="Admin" onclick="deletePortalDocument(${x.id})">Delete</button></div></div>`).join('');
+ box.innerHTML=(data.documents||[]).map(x=>`<div class="document-row"><div><b>${x.title}</b><small>${x.fileName}</small></div><span>${x.category}</span><span>${x.source}</span><span>${x.date}</span><div>${x.blobKey?`<button class="ge-btn secondary" onclick="GEFiles.download('${x.blobKey}','${String(x.fileName).replaceAll("'","")}')">Download</button>`:''} <button class="ge-btn" data-role-min="Admin" data-document-id="${geEsc(x.id)}" onclick="deletePortalDocument(this.dataset.documentId)">Delete</button></div></div>`).join('');
  if(typeof gxApplyRole==='function')gxApplyRole();
 }
+async function uploadPortalDocument(form,file,metadata){
+ if(!form||!file||form.dataset.saving==='true')return;
+ form.dataset.saving='true';
+ const button=form.querySelector('[type="submit"]');
+ if(button)button.disabled=true;
+ const id=crypto.randomUUID();
+ const key='portal-documents/'+id;
+ try{
+   await window.GEFiles.put(key,file);
+   await store.saveRecord('documents','CREATE',id,{
+     ...metadata,date:new Date().toISOString().slice(0,10),fileName:file.name,blobKey:key
+   });
+ }catch(error){
+   geStorageNoticeV223('Dokumen belum tersimpan',error.message||'Silakan coba kembali.','error');
+   return;
+ }finally{
+   delete form.dataset.saving;
+   if(button)button.disabled=false;
+ }
+ form.reset();
+ renderDocumentsAdmin();
+ renderDocumentsHome();
+ geStorageNoticeV223('Dokumen tersimpan',metadata.title,'success');
+}
 async function addPortalDocument(){
- const f=document.getElementById('docFile')?.files?.[0];if(!f)return;
- const key='doc_'+Date.now();await GEFiles.put(key,f);
- data.documents.push({id:Date.now(),title:docTitle.value.trim(),category:docCategory.value.trim(),source:docSource.value,date:new Date().toISOString().slice(0,10),fileName:f.name,note:docNote.value.trim(),blobKey:key});
- save();documentForm.reset();renderDocumentsAdmin();renderDocumentsHome();alert('Dokumen berhasil disimpan offline dan ditampilkan pada Beranda.');
+ if(!geCanManageMasterData())return;
+ const form=document.getElementById('documentForm'),file=document.getElementById('docFile')?.files?.[0];
+ if(!file)return geStorageNoticeV223('Pilih dokumen','Pilih file yang akan diunggah.');
+ return uploadPortalDocument(form,file,{title:docTitle.value.trim(),category:docCategory.value.trim(),source:docSource.value,note:docNote.value.trim()});
 }
 async function addInitiativeDocument(form){
- const f=form.elements.file.files?.[0];if(!f)return;const key='initdoc_'+Date.now();await GEFiles.put(key,f);
- data.documents.push({id:Date.now(),title:form.elements.title.value.trim(),category:form.elements.category.value.trim()||'Laporan Inisiatif',source:'Kegiatan & Inisiatif',date:new Date().toISOString().slice(0,10),fileName:f.name,note:activeJourney||'',blobKey:key});
- save();form.reset();alert('Dokumen berhasil diunggah dan akan tampil pada Beranda.');
+ const file=form?.elements.file.files?.[0];
+ if(!file)return geStorageNoticeV223('Pilih dokumen','Pilih file yang akan diunggah.');
+ return uploadPortalDocument(form,file,{title:form.elements.title.value.trim(),category:form.elements.category.value.trim()||'Laporan Inisiatif',source:'Kegiatan & Inisiatif',note:activeJourney||''});
 }
 async function deletePortalDocument(id){if(confirm('Hapus dokumen dari daftar?')){if(!await geDeleteFirestoreRecord('documents',id))return;renderDocumentsAdmin();renderDocumentsHome()}}
 
@@ -1749,7 +1776,7 @@ function renderPersonnel(){
     <td>${i+1}</td><td>${x.employeeNo||'-'}</td><td><b>${x.name||'-'}</b></td>
     <td>${x.position||'-'}</td><td>${x.sitaCode||'-'}</td><td><b>${x.airport||'-'}</b></td>
     <td><span class="function-pill">${x.function||'-'}</span></td><td>${x.email||'-'}</td>
-    ${can?`<td class="visitor-actions"><button class="ge-btn secondary compact-btn" onclick="openPersonnelModal(${x.id})">Edit</button><button class="ge-btn danger compact-btn" onclick="deletePersonnel(${x.id})">Delete</button></td>`:''}
+    ${can?`<td class="visitor-actions"><button class="ge-btn secondary compact-btn" type="button" data-personnel-id="${geEsc(x.id)}" onclick="openPersonnelModal(this.dataset.personnelId)">Edit</button><button class="ge-btn danger compact-btn" type="button" data-personnel-id="${geEsc(x.id)}" onclick="deletePersonnel(this.dataset.personnelId)">Delete</button></td>`:''}
   </tr>`).join('');
   if(typeof geEnhanceAllTables==='function')setTimeout(geEnhanceAllTables,0);
 }
@@ -1761,20 +1788,39 @@ function openPersonnelModal(id=null){
   personnelName.value=x?.name||'';personnelPosition.value=x?.position||'';
   personnelSitaCode.value=x?.sitaCode||'';personnelAirport.value=x?.airport||'';
   personnelFunction.value=x?.function||'';personnelEmail.value=x?.email||'';
-  document.getElementById('personnelModal').classList.add('show');
+  const modal=document.getElementById('personnelModal');
+ const form=modal.querySelector('form');if(form)delete form.dataset.newRecordId;
+ modal.classList.add('show');
 }
 function closePersonnelModal(){document.getElementById('personnelModal')?.classList.remove('show')}
-function savePersonnel(){
-  if(!geCanManageMasterData())return;
-  const id=Number(personnelEditId.value||0);
-  const obj={
-    id:id||Date.now(),employeeNo:personnelEmployeeNo.value.trim(),name:personnelName.value.trim(),
-    position:personnelPosition.value.trim(),sitaCode:personnelSitaCode.value.trim(),
-    airport:personnelAirport.value.trim().toUpperCase(),function:personnelFunction.value.trim().toUpperCase(),
-    email:personnelEmail.value.trim().toUpperCase()
-  };
-  if(id)Object.assign(data.personnel.find(p=>p.id===id),obj);else data.personnel.push(obj);
-  save();closePersonnelModal();renderPersonnel();renderPersonnelReadiness();
+async function savePersonnel(){
+ const form=document.getElementById('personnelModal')?.querySelector('form');
+ if(!geCanManageMasterData()||!form||form.dataset.saving==='true')return;
+ const id=personnelEditId.value.trim();
+ const record={employeeNo:personnelEmployeeNo.value.trim(),name:personnelName.value.trim(),
+   position:personnelPosition.value.trim(),sitaCode:personnelSitaCode.value.trim(),
+   airport:personnelAirport.value.trim().toUpperCase(),function:personnelFunction.value.trim().toUpperCase(),
+   email:personnelEmail.value.trim()};
+ if(!record.name)return geStorageNoticeV223('Data Belum Lengkap','Nama personil wajib diisi.');
+ const recordId=id||form.dataset.newRecordId||crypto.randomUUID();
+ if(!id)form.dataset.newRecordId=recordId;
+ form.dataset.saving='true';
+ const submit=form.querySelector('[type="submit"]');
+ if(submit)submit.disabled=true;
+ try{
+   await store.saveRecord('personnel',id?'UPDATE':'CREATE',recordId,record);
+ }catch(error){
+   geStorageNoticeV223('Personil belum tersimpan',error.message||'Silakan coba kembali.','error');
+   return;
+ }finally{
+   delete form.dataset.saving;
+   if(submit)submit.disabled=false;
+ }
+ closePersonnelModal();
+ renderPersonnel();
+ renderAirports();
+ renderPersonnelReadiness();
+ geStorageNoticeV223('Personil tersimpan',record.name,'success');
 }
 async function deletePersonnel(id){
   if(!geCanManageMasterData())return;
@@ -1847,7 +1893,7 @@ function renderDocumentsAdmin(){
  const ce=document.getElementById('docAdminCategory');if(ce){const cur=ce.value;ce.innerHTML='<option value="">Semua Kategori</option>'+cats.map(x=>`<option>${x}</option>`).join('');ce.value=cur}
  const se=document.getElementById('docAdminSource');if(se){const cur=se.value;se.innerHTML='<option value="">Semua Sumber</option>'+sources.map(x=>`<option>${x}</option>`).join('');se.value=cur}
  const rows=(data.documents||[]).filter(x=>(!q||`${x.title} ${x.fileName} ${x.note}`.toLowerCase().includes(q))&&(!cat||x.category===cat)&&(!src||x.source===src));
- box.innerHTML=rows.map(x=>`<div class="document-row"><div><b>${x.title}</b><small>${x.fileName}</small></div><span>${x.category}</span><span>${x.source}</span><span>${x.date}</span><div>${x.blobKey?`<button class="ge-btn secondary" onclick="GEFiles.download('${x.blobKey}','${String(x.fileName).replaceAll("'","")}')">Download</button>`:''} <button class="ge-btn" data-role-min="Admin" onclick="deletePortalDocument(${x.id})">Delete</button></div></div>`).join('');
+ box.innerHTML=rows.map(x=>`<div class="document-row"><div><b>${x.title}</b><small>${x.fileName}</small></div><span>${x.category}</span><span>${x.source}</span><span>${x.date}</span><div>${x.blobKey?`<button class="ge-btn secondary" onclick="GEFiles.download('${x.blobKey}','${String(x.fileName).replaceAll("'","")}')">Download</button>`:''} <button class="ge-btn" data-role-min="Admin" data-document-id="${geEsc(x.id)}" onclick="deletePortalDocument(this.dataset.documentId)">Delete</button></div></div>`).join('');
  if(typeof gxApplyRole==='function')gxApplyRole();
 }
 
@@ -2420,13 +2466,33 @@ function geAirportVisibleRows(){
   ;['lounges','serviceProcurement','stationMaterials','airportSystems','facilities','assets'].forEach(k=>(data[k]||[]).forEach(x=>add(x.airport||x.station||x.stationCode||x.code,x)));
   return base.map(geAirportCanonicalR8).filter(a=>a.code&&Number.isFinite(Number(a.lat))&&Number.isFinite(Number(a.lon))&&!(Number(a.lat)===0&&Number(a.lon)===0)&&(typeof gxAirportAllowed!=='function'||gxAirportAllowed(a.code))).map(geAirportDerived);
 }
-function geSetAirportStatus(code,status){
-  if(!(typeof gxCanManage==='function'&&gxCanManage()))return;
-  const a=(data.airports||[]).find(x=>x.code===code);if(!a)return;
-  a.status=status;save();renderAirports();renderAirportMapMarkers();
+function airportMasterRows(){
+ return (data.airports||[]).map(geAirportCanonicalR8).filter(airport=>airport.code&&
+   (typeof gxAirportAllowed!=='function'||gxAirportAllowed(airport.code))).map(geAirportDerived);
+}
+async function geSetAirportStatus(code,status,control){
+ const airport=(data.airports||[]).find(row=>geAirportCanonicalR8(row).code===code);
+ const previous=airport?.status||'Active';
+ if(!geAdminV231()||!airport||!['Active','Inactive'].includes(status)||previous===status){
+   if(control)control.value=previous;
+   return;
+ }
+ if(control)control.disabled=true;
+ try{
+   await store.saveRecord('airports','UPDATE',airport.id,{status});
+ }catch(error){
+   if(control)control.value=previous;
+   geStorageNoticeV223('Status belum tersimpan',error.message||'Silakan coba kembali.','error');
+   return;
+ }finally{
+   if(control)control.disabled=false;
+ }
+ renderAirports();
+ window.renderAirportMapMarkers?.();
+ geStorageNoticeV223('Status airport tersimpan',`${code} sekarang berstatus ${status}.`,'success');
 }
 function populateAirportMasterFilters(){
-  const rows=geAirportVisibleRows();
+  const rows=airportMasterRows();
   const fill=(id,label,vals)=>{
     const e=document.getElementById(id);if(!e)return;const cur=e.value;
     e.innerHTML=`<option value="">${label}</option>`+[...new Set(vals.filter(Boolean))].sort().map(x=>`<option>${x}</option>`).join('');
@@ -2440,7 +2506,7 @@ function airportMasterFiltered(){
   const w=document.getElementById('airportWilayahFilter')?.value||'';
   const r=document.getElementById('airportRegionFilter')?.value||'';
   const s=document.getElementById('airportStatusFilter')?.value||'';
-  return geAirportVisibleRows().filter(a=>
+  return airportMasterRows().filter(a=>
     (!q||`${a.code} ${a.city} ${a.gm}`.toLowerCase().includes(q))&&
     (!w||a.wilayah===w)&&(!r||a.region===r)&&(!s||a.status===s)
   );
@@ -2457,7 +2523,7 @@ function renderAirports(){
     <td>${a.pending?`<span class="pending-count">${a.pending}</span>`:'<span class="clear-count">0</span>'}</td>
   </tr>`).join('');
 
-  const all=geAirportVisibleRows(),set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v};
+  const all=airportMasterRows(),set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v};
   set('airportMasterTotal',all.length);
   set('airportMasterActive',all.filter(x=>x.status==='Active').length);
   set('airportMasterInactive',all.filter(x=>x.status==='Inactive').length);
@@ -2507,7 +2573,7 @@ function geAirportInfo(code){
 }
 function showAirportTooltip(ev,code){
   const d=geAirportInfo(code),t=document.getElementById('mapTooltip'),m=document.getElementById('interactiveMap');if(!d||!t||!m)return;
-  const mr=m.getBoundingClientRect(),er=ev.currentTarget.getBoundingClientRect();
+  const mr=m.getBoundingClientRect(),er=marker.getBoundingClientRect();
   t.innerHTML=`<div class="tooltip-airport-head"><b>${d.code} — ${geEsc(d.city)}</b><span class="${d.status==='Active'?'status-active':'status-inactive'}">${d.status}</span></div>
     <small>${geEsc(d.wilayah)} • ${geEsc(d.region||'-')}</small>
     <div class="tooltip-grid">
@@ -2612,7 +2678,7 @@ function showAirportTooltip(ev,code){
       <span>GM<b>${geEsc(d.gm)}</b></span><span>Visitor Lounge<b>${Number(d.visitorLounge).toLocaleString('id-ID')}</b></span>
       <span>Kontrak<b>${d.contracts}</b></span><span>Pending<b>${d.pending}</b></span>
     </div>`;
-  const mr=m.getBoundingClientRect(),er=ev.currentTarget.getBoundingClientRect();
+  const mr=m.getBoundingClientRect(),er=marker.getBoundingClientRect();
   const tooltipW=310, tooltipH=185;
   let left=er.left-mr.left+er.width/2;
   let top=er.top-mr.top-tooltipH-18;
@@ -2719,7 +2785,7 @@ function showAirportTooltip(ev,code){
       <span>Pending<b>${d.pending}</b></span>
     </div>`;
 
-  const mr=m.getBoundingClientRect(),er=ev.currentTarget.getBoundingClientRect();
+  const mr=m.getBoundingClientRect(),er=marker.getBoundingClientRect();
   const tooltipW=318, tooltipH=182;
   let left=er.left-mr.left + er.width/2;
   let top=er.top-mr.top - tooltipH - 15;
@@ -4990,41 +5056,71 @@ function geDeleteConfirmV231(label){return confirm(`Hapus ${label}?`)}
 /* ---------- Airport Database CRUD ---------- */
 function openAirportModalV231(id=null){
  if(!geAdminV231())return;
- const x=id?(data.airports||[]).find(a=>String(a.id)===String(id)):null;
- airportModalTitleV231.textContent=x?'Update Database Airport':'Tambah Database Airport';
- airportEditIdV231.value=x?.id||'';airportCodeV231.value=x?.code||'';airportCityV231.value=x?.city||'';
- airportNameV231.value=x?.airportName||'';airportWilayahV231.value=x?.wilayah||'Domestik';
- airportRegionV231.value=x?.region||'';airportStatusV231.value=x?.status||'Active';
- airportLatV231.value=x?.lat??'';airportLonV231.value=x?.lon??'';
- airportModalV231.classList.add('show');
+ const form=document.getElementById('airportModalV231');
+ if(!form)return;
+ const stored=id==null?null:(data.airports||[]).find(row=>String(row.id)===String(id));
+ if(id!=null&&!stored)return geStorageNoticeV223('Airport tidak ditemukan','Muat ulang daftar airport lalu coba lagi.','warning');
+ const row=stored?geAirportCanonicalR8(stored):null;
+ document.getElementById('airportModalTitleV231').textContent=row?'Update Database Airport':'Tambah Database Airport';
+ form.dataset.newRecordId='';
+ const fields={EditId:row?.id??'',Code:row?.code||'',City:row?.city||'',Name:row?.airportName||'',
+   Wilayah:row?.wilayah||'Domestik',Region:row?.region||'',Status:row?.status||'Active',
+   Lat:stored?stored.lat??stored.latitude??stored.coordinates?.lat??'':'',
+   Lon:stored?stored.lon??stored.lng??stored.longitude??stored.coordinates?.lng??'':''};
+ for(const [field,value] of Object.entries(fields))document.getElementById('airport'+field+'V231').value=String(value);
+ form.classList.add('show');
 }
-function closeAirportModalV231(){airportModalV231?.classList.remove('show')}
-function saveAirportV231(){
+function closeAirportModalV231(){
+ const form=document.getElementById('airportModalV231');
+ if(form?.dataset.saving!=='true')form?.classList.remove('show');
+}
+async function saveAirportV231(){
  if(!geAdminV231())return;
- const id=Number(airportEditIdV231.value||0),code=airportCodeV231.value.trim().toUpperCase();
- if(!code||!airportCityV231.value.trim())return geStorageNoticeV223('Data Belum Lengkap','Airport Code dan City wajib diisi.');
- const duplicate=(data.airports||[]).find(a=>a.code===code&&a.id!==id);
- if(duplicate)return geStorageNoticeV223('Airport Sudah Ada',`${code} sudah tersedia pada Database Airport.`);
- const obj={id:id||Date.now(),no:0,code,city:airportCityV231.value.trim(),airportName:airportNameV231.value.trim(),
-   wilayah:airportWilayahV231.value,region:airportRegionV231.value.trim().toUpperCase(),regionSource:'Admin Master',
-   status:airportStatusV231.value,lat:Number(airportLatV231.value||0),lon:Number(airportLonV231.value||0)};
- if(id)Object.assign(data.airports.find(a=>a.id===id),obj);else data.airports.push(obj);
- data.airports.forEach((a,i)=>a.no=i+1);save();closeAirportModalV231();renderAirports();renderAirportMapMarkers();
+ const form=document.getElementById('airportModalV231');
+ if(!form||form.dataset.saving==='true')return;
+ const get=field=>document.getElementById('airport'+field+'V231').value.trim();
+ const id=get('EditId'),code=get('Code').toUpperCase(),city=get('City');
+ if(!code||!city)return geStorageNoticeV223('Data Belum Lengkap','Airport Code dan City wajib diisi.');
+ const airports=data.airports||[];
+ if(id&&!airports.some(row=>String(row.id)===id))return geStorageNoticeV223('Airport tidak ditemukan','Muat ulang daftar airport lalu coba lagi.');
+ if(airports.some(row=>geAirportCanonicalR8(row).code===code&&String(row.id)!==id))
+   return geStorageNoticeV223('Airport Sudah Ada',`${code} sudah tersedia pada Database Airport.`);
+ const lat=get('Lat'),lon=get('Lon');
+ if((lat==='' )!==(lon==='')||lat!==''&&(!Number.isFinite(Number(lat))||!Number.isFinite(Number(lon))||
+   Math.abs(Number(lat))>90||Math.abs(Number(lon))>180))
+   return geStorageNoticeV223('Koordinat belum valid','Isi kedua koordinat dengan latitude dan longitude yang valid, atau kosongkan keduanya.');
+ const record={code,city,airportName:get('Name'),wilayah:get('Wilayah'),region:get('Region').toUpperCase(),
+   regionSource:'Admin Master',status:get('Status'),lat:lat===''?null:Number(lat),lon:lon===''?null:Number(lon)};
+ const newId=id||form.dataset.newRecordId||crypto.randomUUID();
+ form.dataset.newRecordId=id?'':newId;
+ const button=form.querySelector('[onclick="saveAirportV231()"]');
+ form.dataset.saving='true';
+ if(button)button.disabled=true;
+ try{
+   await store.saveRecord('airports',id?'UPDATE':'CREATE',newId,record);
+ }catch(error){
+   geStorageNoticeV223('Airport belum tersimpan',error.message||'Silakan coba kembali.','error');
+   return;
+ }finally{
+   delete form.dataset.saving;
+   if(button)button.disabled=false;
+ }
+ closeAirportModalV231();
+ renderAirports();
+ window.renderAirportMapMarkers?.();
+ geStorageNoticeV223('Database airport tersimpan',`${code} — ${city}.`,'success');
 }
-async function deleteAirportV231(id){
- if(!geAdminV231())return;const x=(data.airports||[]).find(a=>a.id===id);if(!x||!geDeleteConfirmV231(`Airport ${x.code}`))return;
- if(!await geDeleteFirestoreRecord('airports',id))return;renderAirports();renderAirportMapMarkers();
-}
+let deleteAirportV231;
 renderAirports=function(){
  const t=document.getElementById('airportRows');if(!t)return;
  populateAirportMasterFilters();const rows=airportMasterFiltered(),can=geAdminV231();
  t.innerHTML=rows.map((a,i)=>`<tr>
   <td>${a.no||i+1}</td><td><b>${geEsc(a.code)}</b></td><td>${geEsc(a.city)}</td><td>${geEsc(a.wilayah)}</td><td>${geEsc(a.region||'-')}</td>
-  <td>${can?`<select class="inline-status-select ${a.status==='Inactive'?'inactive':''}" onchange="geSetAirportStatus('${a.code}',this.value)"><option ${a.status==='Active'?'selected':''}>Active</option><option ${a.status==='Inactive'?'selected':''}>Inactive</option></select>`:`<span class="pill">${geEsc(a.status)}</span>`}</td>
+  <td>${can?`<select class="inline-status-select ${a.status==='Inactive'?'inactive':''}" data-airport-code="${geEsc(a.code)}" onchange="geSetAirportStatus(this.dataset.airportCode,this.value,this)"><option ${a.status==='Active'?'selected':''}>Active</option><option ${a.status==='Inactive'?'selected':''}>Inactive</option></select>`:`<span class="pill">${geEsc(a.status)}</span>`}</td>
   <td>${geEsc(a.gm)}</td><td>${Number(a.visitorLounge).toLocaleString('id-ID')}</td><td>${a.contracts}</td><td>${a.pending?`<span class="pending-count">${a.pending}</span>`:'<span class="clear-count">0</span>'}</td>
-  ${can?`<td class="visitor-actions"><button class="ge-btn secondary compact-btn" onclick="openAirportModalV231(${a.id})">Edit</button><button class="ge-btn danger compact-btn" onclick="deleteAirportV231(${a.id})">Delete</button></td>`:''}
+  ${can?`<td class="visitor-actions"><button class="ge-btn secondary compact-btn" type="button" data-airport-id="${geEsc(a.id)}" onclick="openAirportModalV231(this.dataset.airportId)">Edit</button><button class="ge-btn danger compact-btn" type="button" data-airport-id="${geEsc(a.id)}" onclick="deleteAirportV231(this.dataset.airportId)">Delete</button></td>`:''}
  </tr>`).join('');
- const all=geAirportVisibleRows(),set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v};
+ const all=airportMasterRows(),set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v};
  set('airportMasterTotal',all.length);set('airportMasterActive',all.filter(x=>x.status==='Active').length);set('airportMasterInactive',all.filter(x=>x.status==='Inactive').length);
  set('airportMasterContracts',all.reduce((s,x)=>s+x.contracts,0));set('airportMasterPending',all.reduce((s,x)=>s+x.pending,0));
  if(typeof geEnhanceAllTables==='function')setTimeout(geEnhanceAllTables,0);
@@ -5319,7 +5415,7 @@ function geCanManagePurchaseV232(){
 }
 function openPurchaseModalV232(id=null){
   if(!geCanManagePurchaseV232())return;
-  const x=id?(data.loungePurchases||[]).find(v=>v.id===id):null;
+  const x=id?(data.loungePurchases||[]).find(v=>String(v.id)===String(id)):null;
   purchaseModalTitleV232.textContent=x?'Update Pembelian Akses':'Tambah Pembelian Akses';
   purchaseEditIdV232.value=x?.id||'';
   purchaseNameV232.value=x?.name||'';purchaseFlightV232.value=x?.flight||'';
@@ -5331,6 +5427,7 @@ function openPurchaseModalV232(id=null){
   if(ap){ap.innerHTML=[...new Set((geVisibleLoungeRows()||[]).map(v=>v.airport))].sort().map(v=>`<option>${v}</option>`).join('');if(x?.airport)ap.value=x.airport}
   refreshPurchaseServicesV232();
   if(x?.serviceId)purchaseServiceV232.value=String(x.serviceId);
+  delete purchaseModalV232.dataset.newRecordId;
   purchaseModalV232.classList.add('show');
 }
 function closePurchaseModalV232(){purchaseModalV232?.classList.remove('show')}
@@ -5338,23 +5435,39 @@ function refreshPurchaseServicesV232(){
   const ap=document.getElementById('purchaseAirportV232')?.value||'';
   const sel=document.getElementById('purchaseServiceV232');if(!sel)return;
   const rows=(geVisibleLoungeRows()||[]).filter(x=>x.airport===ap && ['Lounge','Tenant'].includes(x.serviceType||x.serviceCategory||'Lounge'));
-  sel.innerHTML=rows.map(x=>`<option value="${x.id}">${geEsc(x.name)} • ${geEsc(x.serviceType||x.serviceCategory||'Lounge')}</option>`).join('');
+  sel.innerHTML=rows.map(x=>`<option value="${geEsc(x.id)}">${geEsc(x.name)} • ${geEsc(x.serviceType||x.serviceCategory||'Lounge')}</option>`).join('');
 }
-function savePurchaseV232(){
-  if(!geCanManagePurchaseV232())return;
-  const id=Number(purchaseEditIdV232.value||0),serviceId=Number(purchaseServiceV232.value||0);
-  const service=(data.lounges||[]).find(x=>x.id===serviceId);
-  const now=new Date();
-  const obj={id:id||Date.now(),date:now.toISOString().slice(0,10),time:now.toTimeString().slice(0,5),
-    name:purchaseNameV232.value.trim(),flight:purchaseFlightV232.value.trim().toUpperCase(),
-    airport:purchaseAirportV232.value,serviceId,serviceName:service?.name||'-',
-    accessType:purchaseTypeV232.value,reference:purchaseReferenceV232.value.trim(),
-    currency:purchaseCurrencyV232.value.trim().toUpperCase(),amount:Number(purchaseAmountV232.value||0),
-    status:purchaseStatusV232.value,remark:purchaseRemarkV232.value.trim()};
-  if(!obj.name||!obj.airport||!serviceId)return geStorageNoticeV223('Data Belum Lengkap','Nama Penumpang, Airport, dan Lounge/Tenant wajib diisi.');
-  data.loungePurchases=data.loungePurchases||[];
-  if(id)Object.assign(data.loungePurchases.find(x=>x.id===id),obj);else data.loungePurchases.push(obj);
-  save();closePurchaseModalV232();renderPurchaseV232();
+async function savePurchaseV232(){
+ if(!geCanManagePurchaseV232())return;
+ const modal=document.getElementById('purchaseModalV232');
+ if(!modal||modal.dataset.saving==='true')return;
+ const id=purchaseEditIdV232.value.trim(),serviceId=purchaseServiceV232.value;
+ const service=geVisibleLoungeRows().find(row=>String(row.id)===serviceId&&row.airport===purchaseAirportV232.value);
+ const now=new Date();
+ const record={date:now.toISOString().slice(0,10),time:now.toTimeString().slice(0,5),
+   name:purchaseNameV232.value.trim(),flight:purchaseFlightV232.value.trim().toUpperCase(),
+   airport:purchaseAirportV232.value,serviceId:service?.id,serviceName:service?.name||'-',
+   accessType:purchaseTypeV232.value,reference:purchaseReferenceV232.value.trim(),
+   currency:purchaseCurrencyV232.value.trim().toUpperCase(),amount:Number(purchaseAmountV232.value||0),
+   status:purchaseStatusV232.value,remark:purchaseRemarkV232.value.trim()};
+ if(!record.name||!service)return geStorageNoticeV223('Data Belum Lengkap','Nama Penumpang, Airport, dan Lounge/Tenant wajib diisi.');
+ modal.dataset.saving='true';
+ const button=modal.querySelector('[onclick="savePurchaseV232()"]');
+ if(button)button.disabled=true;
+ const recordId=id||modal.dataset.newRecordId||crypto.randomUUID();
+ if(!id)modal.dataset.newRecordId=recordId;
+ try{
+   await store.saveRecord('loungePurchases',id?'UPDATE':'CREATE',recordId,record);
+ }catch(error){
+   geStorageNoticeV223('Pembelian belum tersimpan',error.message||'Silakan coba kembali.','error');
+   return;
+ }finally{
+   delete modal.dataset.saving;
+   if(button)button.disabled=false;
+ }
+ closePurchaseModalV232();
+ renderPurchaseV232();
+ geStorageNoticeV223('Pembelian tersimpan',record.name,'success');
 }
 async function deletePurchaseV232(id){
   if(!geCanManagePurchaseV232()||!confirm('Hapus transaksi pembelian akses ini?'))return;
@@ -5369,7 +5482,7 @@ function renderPurchaseV232(){
     return(!q||`${x.name} ${x.flight} ${x.reference}`.toLowerCase().includes(q))&&(!a||x.airport===a)&&(!st||x.status===st);
   });
   gePlanningPopulateSelect('purchaseAirportFilterV232',(data.loungePurchases||[]).map(x=>x.airport),'Semua Airport');
-  tbody.innerHTML=rows.map((x,i)=>`<tr><td>${i+1}</td><td>${x.date}</td><td>${x.time}</td><td><b>${geEsc(x.name)}</b></td><td>${geEsc(x.flight||'-')}</td><td>${geEsc(x.airport)}</td><td>${geEsc(x.serviceName||'-')}</td><td>${geEsc(x.accessType)}</td><td>${geEsc(x.reference||'-')}</td><td>${geEsc(x.currency)} ${Number(x.amount||0).toLocaleString('id-ID')}</td><td>${geEsc(x.status)}</td><td class="visitor-actions"><button class="ge-btn secondary compact-btn" onclick="openPurchaseModalV232(${x.id})">Edit</button><button class="ge-btn danger compact-btn" onclick="deletePurchaseV232(${x.id})">Delete</button></td></tr>`).join('');
+  tbody.innerHTML=rows.map((x,i)=>`<tr><td>${i+1}</td><td>${x.date}</td><td>${x.time}</td><td><b>${geEsc(x.name)}</b></td><td>${geEsc(x.flight||'-')}</td><td>${geEsc(x.airport)}</td><td>${geEsc(x.serviceName||'-')}</td><td>${geEsc(x.accessType)}</td><td>${geEsc(x.reference||'-')}</td><td>${geEsc(x.currency)} ${Number(x.amount||0).toLocaleString('id-ID')}</td><td>${geEsc(x.status)}</td><td class="visitor-actions"><button class="ge-btn secondary compact-btn" data-purchase-id="${geEsc(x.id)}" onclick="openPurchaseModalV232(this.dataset.purchaseId)">Edit</button><button class="ge-btn danger compact-btn" data-purchase-id="${geEsc(x.id)}" onclick="deletePurchaseV232(this.dataset.purchaseId)">Delete</button></td></tr>`).join('');
   const all=data.loungePurchases||[],set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v};
   set('purchaseTotalV232',all.length);set('purchasePaidV232',all.filter(x=>x.status==='Paid').length);set('purchasePendingV232',all.filter(x=>x.status==='Pending').length);set('purchaseAirportCountV232',new Set(all.map(x=>x.airport)).size);
   gePlanningEmpty('purchaseEmptyV232',rows);if(typeof geEnhanceAllTables==='function')setTimeout(geEnhanceAllTables,0);
@@ -5622,14 +5735,15 @@ deleteUserAccount = async function(id){
 };
 
 deletePersonnel = async function(id){
-  if(!geCanManagePersonnel())return;
-  const x=(data.personnel||[]).find(v=>v.id===id);if(!x)return;
+  if(!geCanManageMasterData())return;
+  const x=(data.personnel||[]).find(v=>String(v.id)===String(id));if(!x)return;
   if(!await geConfirmDeleteV234({
     title:'Hapus Data Personil?',
     item:`${x.name||'Personil'} • ${x.airport||'HO'}`,
     message:'Data personil akan dihapus dari master Airport & Head Office.'
   }))return;
-  if(!await geDeleteFirestoreRecord('personnel',id))return;renderPersonnel();
+  if(!await geDeleteFirestoreRecord('personnel',id))return;renderPersonnel();renderAirports();
+  geStorageNoticeV223('Personil dihapus',x.name||'Personil','success');
 };
 
 deleteInbox = async function(id){
@@ -5707,9 +5821,10 @@ geDeleteConfirmV231 = async function(label){
 
 /* Functions that formerly called synchronous geDeleteConfirmV231 are explicitly overridden. */
 deleteAirportV231 = async function(id){
-  if(!geAdminV231())return;const x=(data.airports||[]).find(a=>a.id===id);if(!x)return;
+  if(!geAdminV231())return;const x=(data.airports||[]).find(a=>String(a.id)===String(id));if(!x)return;
   if(!await geConfirmDeleteV234({title:'Hapus Database Airport?',item:`${x.code} — ${x.city}`,message:'Airport akan dihapus dari master dan tidak lagi menjadi referensi utama portal.'}))return;
-  if(!await geDeleteFirestoreRecord('airports',id))return;renderAirports();renderAirportMapMarkers();
+  if(!await geDeleteFirestoreRecord('airports',id))return;renderAirports();window.renderAirportMapMarkers?.();
+  geStorageNoticeV223('Airport dihapus',`${x.code} berhasil dihapus dari master.`,'success');
 };
 deleteStationMaterialV231 = async function(id){
   if(!geAdminV231())return;const x=(data.stationMaterials||[]).find(v=>v.id===id);if(!x)return;
@@ -5728,7 +5843,7 @@ deleteGasoV231 = async function(type,id){
 };
 
 deletePurchaseV232 = async function(id){
-  if(!geCanManagePurchaseV232())return;const x=(data.loungePurchases||[]).find(v=>v.id===id);if(!x)return;
+  if(!geCanManagePurchaseV232())return;const x=(data.loungePurchases||[]).find(v=>String(v.id)===String(id));if(!x)return;
   if(!await geConfirmDeleteV234({title:'Hapus Pembelian Akses?',item:`${x.name||'Penumpang'} • ${x.flight||'-'} • ${x.reference||x.accessType||'-'}`,message:'Transaksi akses Lounge/Tenant akan dihapus dari daftar.'}))return;
   if(!await geDeleteFirestoreRecord('loungePurchases',id))return;renderPurchaseV232();
 };
@@ -6408,7 +6523,7 @@ geMapFilteredAirports=function(){
 showAirportTooltip=function(ev,code){
   const d=geAirportInfo(code),t=document.getElementById('mapTooltip'),m=document.getElementById('interactiveMap');if(!d||!t||!m)return;const s=geAirportServiceInfoV243(code);
   t.innerHTML=`<div class="tooltip-airport-head"><b>${d.code} — ${geEsc(d.city)}</b><span class="${d.status==='Active'?'status-active':'status-inactive'}">${d.status}</span></div><small>${geEsc(d.wilayah)} • ${geEsc(d.region||'-')}</small><div class="tooltip-grid"><span>GM<b>${geEsc(d.gm)}</b></span><span>Visitor Lounge<b>${Number(d.visitorLounge).toLocaleString('id-ID')}</b></span><span>Lounge/Tenant<b>${s.lounges.length}</b></span><span>SGHA<b>${s.sgha.length}</b></span><span>Other Service<b>${s.other.length}</b></span><span>Pending<b>${d.pending}</b></span></div>`;
-  const mr=m.getBoundingClientRect(),er=ev.currentTarget.getBoundingClientRect(),w=318,h=205;let left=er.left-mr.left+er.width/2,top=er.top-mr.top-h-15;if(top<12)top=er.bottom-mr.top+14;left=Math.max(w/2+12,Math.min(mr.width-w/2-12,left));top=Math.max(12,Math.min(mr.height-h-12,top));t.style.left=left+'px';t.style.top=top+'px';t.classList.add('show');
+  const mr=m.getBoundingClientRect(),er=marker.getBoundingClientRect(),w=318,h=205;let left=er.left-mr.left+er.width/2,top=er.top-mr.top-h-15;if(top<12)top=er.bottom-mr.top+14;left=Math.max(w/2+12,Math.min(mr.width-w/2-12,left));top=Math.max(12,Math.min(mr.height-h-12,top));t.style.left=left+'px';t.style.top=top+'px';t.classList.add('show');
 };
 geOpenAirportDetail217=function(code,marker){
   document.querySelectorAll('.airport-marker').forEach(x=>x.classList.remove('active'));marker?.classList.add('active');
@@ -6618,7 +6733,7 @@ showAirportTooltip=function(ev,code){
     </div>
     ${vendorNames.length?`<div class="tooltip-vendor-v244">${vendorNames.slice(0,3).map(v=>`<b>${geEsc(v)}</b>`).join('')}</div>`:''}`;
 
-  const mr=m.getBoundingClientRect(),er=ev.currentTarget.getBoundingClientRect(),w=318,h=220;
+  const mr=m.getBoundingClientRect(),er=marker.getBoundingClientRect(),w=318,h=220;
   let left=er.left-mr.left+er.width/2,top=er.top-mr.top-h-15;
   if(top<12)top=er.bottom-mr.top+14;
   left=Math.max(w/2+12,Math.min(mr.width-w/2-12,left));
@@ -6685,7 +6800,7 @@ function geMapResetView(){
   document.querySelector('.map-region-cards button:first-child')?.classList.add('active');
   document.querySelector('.map-chip[data-region=""]')?.classList.add('active');
   hideAirportTooltip();
-  renderAirportMapMarkers();
+  window.renderAirportMapMarkers?.();
   geApplyMapView();
 }
 function filterAirportMap(region,button){
@@ -6696,7 +6811,7 @@ function filterAirportMap(region,button){
   button?.classList.add('active');
   document.querySelectorAll(`.map-chip[data-region="${window.GE_MAP_REGION}"]`).forEach(x=>x.classList.add('active'));
   hideAirportTooltip();
-  renderAirportMapMarkers();
+  window.renderAirportMapMarkers?.();
   geApplyMapView();
   geUpdateMapRegionCounts();
 }
@@ -9894,7 +10009,8 @@ window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiative
   if(typeof saveInitiativeProgressV224==='function') window.saveInitiativeProgressV224=saveInitiativeProgressV224;
   if(typeof saveInitiativeStepV224==='function') window.saveInitiativeStepV224=saveInitiativeStepV224;
   if(typeof saveInitiativeV224==='function') window.saveInitiativeV224=saveInitiativeV224;
-  if(typeof setJourneyFilter==='function') window.setJourneyFilter=setJourneyFilter;
+  window.setJourneyFilter=setJourneyFilter;
+  window.geFilterInitiativeTouchpoint=geFilterInitiativeTouchpoint;
   if(typeof closeInboxDetail==='function') window.closeInboxDetail=closeInboxDetail;
   if(typeof openInboxDetail==='function') window.openInboxDetail=openInboxDetail;
   if(typeof openSupportConversation==='function') window.openSupportConversation=openSupportConversation;
@@ -9963,7 +10079,26 @@ window.geInitLoungeAccessPage=()=>{
   if(typeof openInitiativeTimelineV224==='function') window.openInitiativeTimelineV224=openInitiativeTimelineV224;
   if(typeof installInitiativeControls==='function') window.installInitiativeControls=installInitiativeControls;
   if(typeof geInitAirportV214==='function') window.geInitAirportV214=geInitAirportV214;
-  if(typeof renderAirports==='function') window.renderAirports=renderAirports;
+  Object.assign(window,{
+    renderAirports,openAirportModalV231,closeAirportModalV231,saveAirportV231,deleteAirportV231,geSetAirportStatus,
+    viewArticle,deleteArticle,deleteAnnouncement,deleteFaq,editNews,deleteNews,
+    pmMoveSectionR2,pmDeleteAssetR2,resetUserPassword,
+    renderPersonnel,openPersonnelModal,closePersonnelModal,savePersonnel,deletePersonnel,
+    addPortalDocument,addInitiativeDocument,renderDocumentsAdmin,deletePortalDocument,
+    showBOPlanningPanel,openAirportSystemModalV231,closeAirportSystemModalV231,saveAirportSystemV231,deleteAirportSystemV231,
+    openStationMaterialModalV231,closeStationMaterialModalV231,saveStationMaterialV231,deleteStationMaterialV231,
+    showGasoPanelV231,openGasoModalV231,closeGasoModalV231,saveGasoV231,deleteGasoV231,
+    renderGasoMasterV231,renderGasoSupportV231,renderGasoPlanningV231,renderGasoAllV231,
+    refreshScanLoungeOptions,verifyBoardingPass,startCameraScanner,toggleManualEntry,resetLoungeAccess,
+    stopCameraScanner,verifyManualPassenger,closeEligibilityModal,geEligibilityCategoryChanged,geEligibilityCategoryChangedV236,
+    recordEligibleVisitor,recordEligibleVisitorV236,
+    openPurchaseModalV232,closePurchaseModalV232,refreshPurchaseServicesV232,savePurchaseV232,deletePurchaseV232,
+    openVisitorReportModalV239,closeVisitorReportModalV239,visitorReportTypeChangedV239,downloadVisitorReportPDFV239,
+    geVisitorEdit,geVisitorDelete,openInitiativeDocumentV227,deleteInitiativeDocumentV227,
+    downloadLoungeVisitorsCSV,closeVisitorEditModal,saveVisitorEditModal,visitorEditCategoryChanged,
+    openFlightModalV236,deleteFlightV236,
+    geCloseMoveModal218,geMoveViewDetail218,geMoveConfirm218,geCancelRelocate218,geOpenMoveModal218
+  });
   if(typeof renderAirportMapMarkers==='function') window.renderAirportMapMarkers=renderAirportMapMarkers;
   if(typeof filterAirportMap==='function') window.filterAirportMap=filterAirportMap;
   if(typeof showAirportTooltip==='function') window.showAirportTooltip=showAirportTooltip;
@@ -9976,6 +10111,59 @@ window.geInitLoungeAccessPage=()=>{
   if(typeof renderStationMaterials==='function') window.renderStationMaterials=renderStationMaterials;
   if(typeof renderAirportSystems==='function') window.renderAirportSystems=renderAirportSystems;
   if(typeof submitArticleProposal==='function') window.submitArticleProposal=submitArticleProposal;
+  (function bindInitiativeView(){
+  const esc=geEsc;
+/* Final canonical Initiative Grid/List view. This wrapper is intentionally last so legacy exports cannot overwrite it. */
+const initRender=window.renderInitiatives;
+function geInitiativeArray(value){if(Array.isArray(value))return value.map(v=>String(v||'').trim()).filter(Boolean);return String(value||'').split(/[|,;]/).map(v=>v.trim()).filter(Boolean)}
+function geInitiativeFilterValue(id){const el=document.getElementById(id);return String(el?.value||'').trim()}
+
+function geInitiativeCanUpdate(){const s=window.gxGetSession?.()||{},role=String(s.role||'');return /^(Super Admin|Super Administrator)$/i.test(role)||['Admin','Editor'].includes(String(s.accessLevel||''))}
+function geInitiativeCanDelete(){const s=window.gxGetSession?.()||{},role=String(s.role||'');return /^(Super Admin|Super Administrator)$/i.test(role)||String(s.accessLevel||'')==='Admin'}
+function geInitiativeListActions(x){const id=String(x?.id||'');const parts=[];if(geInitiativeCanUpdate())parts.push(`<button type="button" class="ge-btn compact" onclick="window.openInitiativeModalV224?.('${id}')">Update</button>`);if(geInitiativeCanDelete())parts.push(`<button type="button" class="ge-btn danger compact" onclick="window.deleteInitiativeV224?.('${id}')">Delete</button>`);if(!parts.length&&typeof geInitiativeManageButtonsV224==='function')return geInitiativeManageButtonsV224(x);return `<div class="planning-row-actions ge-initiative-actions">${parts.join('')}</div>`}
+function geInitiativeFilteredRows({points,rows}=initiativeSummaryModel()){
+  const q=geInitiativeFilterValue('q').toLowerCase();
+  const tp=geInitiativeFilterValue('ft');
+  const point=points.find(item=>initiativeKey(item.name)===initiativeKey(tp));
+  const ach=geInitiativeFilterValue('fs'),priority=geInitiativeFilterValue('geV2554Priority');
+  const focused=window.GE_INITIATIVE_FOCUS_ID_R65;
+  return rows.filter(row=>{
+    if(focused&&String(row.id)!==String(focused))return false;
+    const stations=initiativeValues(row.stations?.length?row.stations:row.airport);
+    const hay=[row.name,row.pic,row.remark,row.status,row.priority,...initiativeTouchpoints(row),...initiativeJourneys(row),...stations].join(' ').toLowerCase();
+    return (!q||hay.includes(q))&&(!tp||initiativeMatchesTouchpoint(row,point))&&
+      (!ach||achievement(row.plan,row.real)===ach)&&(!priority||String(row.priority||'Normal')===priority);
+  });
+}
+function syncInitiativeView(){
+  document.querySelectorAll('#geInitiativeViewToggle [data-view]').forEach(button=>{
+    const selected=button.dataset.view===(window.GE_INITIATIVE_VIEW||'grid');
+    button.classList.toggle('active',selected);
+    button.setAttribute('aria-pressed',String(selected));
+  });
+}
+if(initRender)window.renderInitiatives=function(){
+  const host=document.getElementById('initRows');
+  if(!host||!document.getElementById('initiativeListSection'))return initRender.apply(this,arguments);
+  const model=initiativeSummaryModel();
+  refreshInitiativeTouchpointOptions(model.points);
+  const rows=geInitiativeFilteredRows(model),view=window.GE_INITIATIVE_VIEW||'grid';
+  syncInitiativeView();
+  if(view!=='list'){
+    host.innerHTML=rows.length&&typeof geInitiativeCardV251==='function'?rows.map(geInitiativeCardV251).join(''):'<div class="initiative-empty-v246">Belum ada inisiatif pada filter ini.</div>';
+    if(typeof renderInitiativeCharts==='function')renderInitiativeCharts(model);
+    return;
+  }
+  host.innerHTML=`<div class="ge-initiative-list"><table class="lounge-reference-table ge-initiative-table" data-initiative-list><thead><tr><th>Initiative</th><th>Journey</th><th>Touch Point</th><th>Station</th><th>PIC</th><th>Due</th><th>Progress</th><th data-table-no-sort>Action</th></tr></thead><tbody>${rows.map(x=>`<tr><td><b>${esc(x.name||'-')}</b></td><td>${esc(geInitiativeArray(x.journeyScopes?.length?x.journeyScopes:x.journey).join(', ')||'-')}</td><td>${esc(geInitiativeArray(x.touchpoints?.length?x.touchpoints:(x.tp||x.touchpoint)).join(', ')||'-')}</td><td>${esc(geInitiativeArray(x.stations?.length?x.stations:x.airport).join(', ')||'-')}</td><td>${esc(x.pic||'-')}</td><td>${esc(x.dueDate||x.endDate||'-')}</td><td>${Number(x.real||0)}% / ${Number(x.plan||0)}%</td><td>${geInitiativeListActions(x)}</td></tr>`).join('')||'<tr><td colspan="8">Belum ada inisiatif pada filter ini.</td></tr>'}</tbody></table></div>`;
+  if(typeof renderInitiativeCharts==='function')renderInitiativeCharts(model);
+  setTimeout(()=>window.geEnhanceAllTables?.(),0);
+};
+
+window.geSetInitiativeView=function(view){
+  window.GE_INITIATIVE_VIEW=view==='list'?'list':'grid';
+  window.renderInitiatives?.();
+};
+  })();
   window.addEventListener=_w;
   window.geReadTabularFileV223=geReadTabularFileV223;
   document.addEventListener=_d;
@@ -10051,16 +10239,6 @@ window.geFocusInitiativeR65=function(id,milestone){
  const typedId=typeof row.id==='number'?Number(row.id):row.id;window.openInitiativeTimelineV224?.(typedId);
  if(milestone!==null&&milestone!==undefined&&milestone!==''){const index=Number(milestone),step=row.workflow?.[index],cards=document.querySelectorAll('#initiativeTimelineModalV224 .timeline-card-v224');if(!step||!cards[index]){notice.textContent='Milestone yang dituju tidak tersedia dalam Initiative ini.';return}cards[index].style.outline='3px solid #287db5';cards[index].scrollIntoView({block:'center'})}
 };
-window.setJourneyFilter=function(journey){
- activeJourney=String(journey||'');
- window.GE_ACTIVE_JOURNEY=activeJourney;
- document.querySelectorAll('.journey-tab[data-journey]').forEach(button=>{
-   const selected=button.dataset.journey===activeJourney;
-   button.classList.toggle('active',selected);
-   button.setAttribute('aria-pressed',String(selected));
- });
- window.renderInitiatives?.();
-};
 window.geInitInitiativeCanonical=function(){
  const panel=document.getElementById('initiativeCharts');
  if(!panel)return;
@@ -10071,7 +10249,7 @@ window.geInitInitiativeCanonical=function(){
  panel.dataset.initialized='true';
  window.setJourneyFilter(buttons.some(button=>button.dataset.journey===journey)?journey:'');
 };
-window.geFilterInitiativeTouchpoint=geFilterInitiativeTouchpoint;
+
 
 let geGanttSortStateR13={key:'title',dir:1};
 let geGanttStateR16={scale:'default',from:'',to:'',filters:{journey:'',touchpoint:'',station:'',pic:'',kind:'',initiative:''}};
@@ -10147,7 +10325,14 @@ window.geInitCalendarWorkspaceCanonical=function(){const tabs=document.getElemen
 
 function airports(){return (store().airports||[]).map(a=>({...a,code:String(a.code||a.airportCode||a.iata||a.stationCode||'').trim().toUpperCase(),city:a.city||a.location||a.airportCity||'',airportName:a.airportName||a.name||a.airport||'',wilayah:a.wilayah||a.serviceRegion||a.networkRegion||a.region||'Domestik',status:a.status||'Active',lat:Number(a.lat??a.latitude??a.coordinates?.lat??0),lon:Number(a.lon??a.lng??a.longitude??a.coordinates?.lng??0)})).filter(a=>a.code)}
 function bindMapInteraction(){const map=document.getElementById('interactiveMap'),stage=document.getElementById('mapStage');if(!map||!stage||map.dataset.r11Bound)return;map.dataset.r11Bound='1';let scale=1,panX=0,panY=0,drag=false,sx=0,sy=0,px=0,py=0;const apply=()=>{stage.style.transformOrigin='50% 50%';stage.style.transform=`translate(${panX}px,${panY}px) scale(${scale})`;const l=document.getElementById('mapZoomLabel');if(l)l.textContent=`Operational Network • ${Math.round(scale*100)}%`};map.addEventListener('wheel',e=>{e.preventDefault();scale=Math.max(1,Math.min(3.5,scale*(e.deltaY<0?1.1:.9)));apply()},{passive:false});map.addEventListener('pointerdown',e=>{if(e.target.closest('button,.airport-marker,.map-tooltip,.map-control-rail-v216'))return;drag=true;sx=e.clientX;sy=e.clientY;px=panX;py=panY;map.setPointerCapture?.(e.pointerId);map.classList.add('is-panning-r11')});map.addEventListener('pointermove',e=>{if(!drag)return;panX=px+(e.clientX-sx);panY=py+(e.clientY-sy);apply()});const end=e=>{drag=false;map.classList.remove('is-panning-r11');try{map.releasePointerCapture?.(e.pointerId)}catch{}};map.addEventListener('pointerup',end);map.addEventListener('pointercancel',end);map.addEventListener('dblclick',e=>{if(e.target.closest('button,.airport-marker'))return;scale=1;panX=panY=0;apply()});apply()}
-window.geInitAirportCanonical=function(){window.GE_MAP_REGION='';window.GEActiveMapRegion='';document.querySelectorAll('.map-chip,.map-region-cards button').forEach(x=>x.classList.remove('active'));document.querySelector('.map-region-cards button:first-child')?.classList.add('active');const rows=(typeof geAirportVisibleRows==='function'?geAirportVisibleRows():airports()),d=store();d.airports=rows;window.renderAirportMapMarkers?.();window.geUpdateMapRegionCounts?.();bindMapInteraction();const body=document.getElementById('rows'),stats=document.getElementById('netStats');if(stats)stats.innerHTML=`<div class="ge-card ge-stat"><small>Stations / Airports</small><b>${rows.length}</b></div><div class="ge-card ge-stat"><small>Active</small><b>${rows.filter(x=>x.status==='Active').length}</b></div><div class="ge-card ge-stat"><small>Regions</small><b>${new Set(rows.map(x=>x.wilayah).filter(Boolean)).size}</b></div>`;if(body)body.innerHTML=rows.length?rows.map(a=>`<tr><td><b>${esc(a.code)}</b></td><td>${esc(a.airportName||'-')}</td><td>${esc(a.city||'-')}</td><td>${esc(a.wilayah||'-')}</td><td>${esc(a.gm||a.generalManager||'-')}</td><td>-</td><td>-</td><td>${esc(a.status)}</td></tr>`).join(''):'<tr><td colspan="8">Data Airport/Station belum tersedia.</td></tr>'};
+window.geInitAirportCanonical=function(){
+ const layer=document.getElementById('airportMarkerLayer');
+ if(!layer)return;
+ if(!layer.dataset.stationMapBound){
+   window.GE_MAP_REGION='';
+   window.GEActiveMapRegion='';
+ }
+const rows=window.geAirportRows?.()||airports();window.renderAirportMapMarkers?.();window.geUpdateMapRegionCounts?.();bindMapInteraction();const body=document.getElementById('rows'),stats=document.getElementById('netStats');if(stats)stats.innerHTML=`<div class="ge-card ge-stat"><small>Stations / Airports</small><b>${rows.length}</b></div><div class="ge-card ge-stat"><small>Active</small><b>${rows.filter(x=>x.status==='Active').length}</b></div><div class="ge-card ge-stat"><small>Regions</small><b>${new Set(rows.map(x=>x.wilayah).filter(Boolean)).size}</b></div>`;if(body)body.innerHTML=rows.length?rows.map(a=>`<tr><td><b>${esc(a.code)}</b></td><td>${esc(a.airportName||'-')}</td><td>${esc(a.city||'-')}</td><td>${esc(a.wilayah||'-')}</td><td>${esc(a.gm||a.generalManager||'-')}</td><td>-</td><td>-</td><td>${esc(a.status)}</td></tr>`).join(''):'<tr><td colspan="8">Data Airport/Station belum tersedia.</td></tr>'};
 })();
 
 
@@ -10207,56 +10392,7 @@ function moveLoungePriceSummary(){const price=document.getElementById('loungePri
 const loungeRender=window.renderLounges;if(loungeRender)window.renderLounges=function(){const r=loungeRender.apply(this,arguments);moveLoungePriceSummary();setTimeout(()=>window.geEnhanceAllTables?.(),0);return r};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',moveLoungePriceSummary);else moveLoungePriceSummary();
 
-/* Final canonical Initiative Grid/List view. This wrapper is intentionally last so legacy exports cannot overwrite it. */
-const initRender=window.renderInitiatives;
-function geInitiativeArray(value){if(Array.isArray(value))return value.map(v=>String(v||'').trim()).filter(Boolean);return String(value||'').split(/[|,;]/).map(v=>v.trim()).filter(Boolean)}
-function geInitiativeFilterValue(id){const el=document.getElementById(id);return String(el?.value||'').trim()}
 
-function geInitiativeCanUpdate(){const s=window.gxGetSession?.()||{},role=String(s.role||'');return /^(Super Admin|Super Administrator)$/i.test(role)||['Admin','Editor'].includes(String(s.accessLevel||''))}
-function geInitiativeCanDelete(){const s=window.gxGetSession?.()||{},role=String(s.role||'');return /^(Super Admin|Super Administrator)$/i.test(role)||String(s.accessLevel||'')==='Admin'}
-function geInitiativeListActions(x){const id=String(x?.id||'');const parts=[];if(geInitiativeCanUpdate())parts.push(`<button type="button" class="ge-btn compact" onclick="window.openInitiativeModalV224?.('${id}')">Update</button>`);if(geInitiativeCanDelete())parts.push(`<button type="button" class="ge-btn danger compact" onclick="window.deleteInitiativeV224?.('${id}')">Delete</button>`);if(!parts.length&&typeof geInitiativeManageButtonsV224==='function')return geInitiativeManageButtonsV224(x);return `<div class="planning-row-actions ge-initiative-actions">${parts.join('')}</div>`}
-function geInitiativeFilteredRows({points,rows}=initiativeSummaryModel()){
-  const q=geInitiativeFilterValue('q').toLowerCase();
-  const tp=geInitiativeFilterValue('ft');
-  const point=points.find(item=>initiativeKey(item.name)===initiativeKey(tp));
-  const ach=geInitiativeFilterValue('fs'),priority=geInitiativeFilterValue('geV2554Priority');
-  const focused=window.GE_INITIATIVE_FOCUS_ID_R65;
-  return rows.filter(row=>{
-    if(focused&&String(row.id)!==String(focused))return false;
-    const stations=initiativeValues(row.stations?.length?row.stations:row.airport);
-    const hay=[row.name,row.pic,row.remark,row.status,row.priority,...initiativeTouchpoints(row),...initiativeJourneys(row),...stations].join(' ').toLowerCase();
-    return (!q||hay.includes(q))&&(!tp||initiativeMatchesTouchpoint(row,point))&&
-      (!ach||achievement(row.plan,row.real)===ach)&&(!priority||String(row.priority||'Normal')===priority);
-  });
-}
-function syncInitiativeView(){
-  document.querySelectorAll('#geInitiativeViewToggle [data-view]').forEach(button=>{
-    const selected=button.dataset.view===(window.GE_INITIATIVE_VIEW||'grid');
-    button.classList.toggle('active',selected);
-    button.setAttribute('aria-pressed',String(selected));
-  });
-}
-if(initRender)window.renderInitiatives=function(){
-  const host=document.getElementById('initRows');
-  if(!host||!document.getElementById('initiativeListSection'))return initRender.apply(this,arguments);
-  const model=initiativeSummaryModel();
-  refreshInitiativeTouchpointOptions(model.points);
-  const rows=geInitiativeFilteredRows(model),view=window.GE_INITIATIVE_VIEW||'grid';
-  syncInitiativeView();
-  if(view!=='list'){
-    host.innerHTML=rows.length&&typeof geInitiativeCardV251==='function'?rows.map(geInitiativeCardV251).join(''):'<div class="initiative-empty-v246">Belum ada inisiatif pada filter ini.</div>';
-    if(typeof renderInitiativeCharts==='function')renderInitiativeCharts(model);
-    return;
-  }
-  host.innerHTML=`<div class="ge-initiative-list"><table class="lounge-reference-table ge-initiative-table" data-initiative-list><thead><tr><th>Initiative</th><th>Journey</th><th>Touch Point</th><th>Station</th><th>PIC</th><th>Due</th><th>Progress</th><th data-table-no-sort>Action</th></tr></thead><tbody>${rows.map(x=>`<tr><td><b>${esc(x.name||'-')}</b></td><td>${esc(geInitiativeArray(x.journeyScopes?.length?x.journeyScopes:x.journey).join(', ')||'-')}</td><td>${esc(geInitiativeArray(x.touchpoints?.length?x.touchpoints:(x.tp||x.touchpoint)).join(', ')||'-')}</td><td>${esc(geInitiativeArray(x.stations?.length?x.stations:x.airport).join(', ')||'-')}</td><td>${esc(x.pic||'-')}</td><td>${esc(x.dueDate||x.endDate||'-')}</td><td>${Number(x.real||0)}% / ${Number(x.plan||0)}%</td><td>${geInitiativeListActions(x)}</td></tr>`).join('')||'<tr><td colspan="8">Belum ada inisiatif pada filter ini.</td></tr>'}</tbody></table></div>`;
-  if(typeof renderInitiativeCharts==='function')renderInitiativeCharts(model);
-  setTimeout(()=>window.geEnhanceAllTables?.(),0);
-};
-
-window.geSetInitiativeView=function(view){
-  window.GE_INITIATIVE_VIEW=view==='list'?'list':'grid';
-  window.renderInitiatives?.();
-};
 
 /* Airport map: preserve real Firestore coordinates and provide known station coordinates only when source coordinates are absent. */
 const GEO={CGK:[-6.1256,106.6559],DPS:[-8.7482,115.1672],SUB:[-7.3798,112.7873],KNO:[3.6422,98.8853],UPG:[-5.0616,119.554],BPN:[-1.2683,116.8945],HLP:[-6.2666,106.891],YIA:[-7.9053,110.0573],BDO:[-6.9006,107.5763],KOE:[-10.1716,123.6711],AAP:[-0.3744,117.2502],BDJ:[-3.4424,114.7626],BKS:[-3.8637,102.339],PLM:[-2.8983,104.6999],PKU:[0.4608,101.4445],PDG:[-0.7869,100.2806],JOG:[-7.7882,110.4318],SRG:[-6.9707,110.3732],SOC:[-7.5161,110.7575],LOP:[-8.7573,116.2767],MDC:[1.5493,124.9263],AMQ:[-3.7103,128.0891],DJJ:[-2.5769,140.5164],TIM:[-4.5283,136.8874],SOQ:[-0.894,131.287],HKG:[22.308,113.9185],SIN:[1.3644,103.9915],KUL:[2.7456,101.7099],BKK:[13.69,100.7501],NRT:[35.772,140.3929],HND:[35.5494,139.7798],ICN:[37.4602,126.4407],SYD:[-33.9399,151.1753],MEL:[-37.669,144.841],JED:[21.6702,39.1525],MED:[24.5534,39.7051],AMS:[52.3105,4.7683]};
@@ -10280,7 +10416,7 @@ const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const db=()=>window.GEStore?.get?.()||{};
 const codeOf=x=>String(x?.code||x?.airportCode||x?.iata||x?.stationCode||x?.station||x?.airport||'').trim().toUpperCase();
 function coords(x,c){let lat=Number(x?.lat??x?.latitude??x?.coordinates?.lat),lon=Number(x?.lon??x?.lng??x?.longitude??x?.coordinates?.lng);if((!Number.isFinite(lat)||!Number.isFinite(lon)||(lat===0&&lon===0))&&GEO[c])[lat,lon]=GEO[c];return {lat,lon}}
-function rows(){const d=db(),base=[],seen=new Set();const add=x=>{const c=codeOf(x);if(!c||seen.has(c))return;const q=coords(x,c);if(!Number.isFinite(q.lat)||!Number.isFinite(q.lon))return;if(typeof window.gxAirportAllowed==='function'&&!window.gxAirportAllowed(c))return;seen.add(c);base.push({...x,code:c,lat:q.lat,lon:q.lon,city:x.city||x.location||'',airportName:x.airportName||x.name||x.airport||'',wilayah:x.wilayah||x.serviceRegion||x.networkRegion||x.region||'Domestik',status:x.status||'Active'})};(d.airports||[]).forEach(add);['lounges','serviceProcurement','stationMaterials','airportSystems','facilities','assets'].forEach(k=>(d[k]||[]).forEach(add));return base}
+function rows(){const d=db(),base=[],seen=new Set();const add=x=>{const c=codeOf(x);if(!c||seen.has(c))return;const q=coords(x,c);if(!Number.isFinite(q.lat)||!Number.isFinite(q.lon)||(q.lat===0&&q.lon===0))return;if(typeof window.gxAirportAllowed==='function'&&!window.gxAirportAllowed(c))return;seen.add(c);base.push({...x,code:c,lat:q.lat,lon:q.lon,city:x.city||x.location||'',airportName:x.airportName||x.name||x.airport||'',wilayah:x.wilayah||x.serviceRegion||x.networkRegion||x.region||'Domestik',status:x.status||'Active'})};(d.airports||[]).forEach(add);['lounges','serviceProcurement','stationMaterials','airportSystems','facilities','assets'].forEach(k=>(d[k]||[]).forEach(add));return base}
 function pos(lat,lon){return{left:(Math.max(-20,Math.min(180,lon))+20)/200*100,top:(75-Math.max(-50,Math.min(75,lat)))/125*100}}
 function controls(){const tools=document.querySelector('.map-search-tools');if(!tools)return;if(!document.getElementById('mapProviderType'))tools.insertAdjacentHTML('beforeend','<select id="mapProviderType"><option value="">Semua Service Provider</option><option value="lounge">Lounge / Tenant</option><option value="gha">Ground Handling Agent</option></select><select id="mapProviderStatus"><option value="">Semua Provider Status</option><option value="active">Active</option><option value="expired">Expired</option></select>');['mapProviderType','mapProviderStatus','mapAirportSearch','mapStatusFilter','mapPendingFilter','mapVendorFilterV244'].forEach(id=>{const e=document.getElementById(id);if(e&&!e.dataset.bound){e.dataset.bound='1';e.addEventListener(id==='mapAirportSearch'?'input':'change',render)}})}
 function providers(code){
@@ -10301,9 +10437,9 @@ function providers(code){
 function filtered(){let a=rows(),q=(document.getElementById('mapAirportSearch')?.value||'').toLowerCase(),st=document.getElementById('mapStatusFilter')?.value||'',type=document.getElementById('mapProviderType')?.value||'',ps=document.getElementById('mapProviderStatus')?.value||'';if(q)a=a.filter(x=>[x.code,x.city,x.airportName,x.gm].join(' ').toLowerCase().includes(q));if(st)a=a.filter(x=>String(x.status)===st);const region=window.GEActiveMapRegion||'';if(region)a=a.filter(x=>String(x.wilayah)===region);const pending=document.getElementById('mapPendingFilter')?.value||'';if(pending)a=a.filter(x=>pending==='pending'?Number(x.pending||0)>0:Number(x.pending||0)===0);const vendor=document.getElementById('mapVendorFilterV244')?.value||'';if(vendor)a=a.filter(x=>providers(x.code).some(p=>p.name===vendor));if(type||ps)a=a.filter(x=>providers(x.code).some(p=>(!type||p.type===type)&&(!ps||p.status===ps)));return a}
 function markerState(x){const type=document.getElementById('mapProviderType')?.value||'',ps=document.getElementById('mapProviderStatus')?.value||'',p=providers(x.code).filter(v=>(!type||v.type===type)&&(!ps||v.status===ps));if(type||ps){if(p.some(v=>v.status==='active'))return'provider-active';if(p.some(v=>v.status==='expired'))return'provider-expired';return'provider-none'}return /inactive/i.test(String(x.status))?'airport-inactive':Number(x.pending||0)>0?'airport-pending':'airport-active'}
 function updateLegend(layer){const host=document.querySelector('.map-legend-v216');if(!host)return;const type=document.getElementById('mapProviderType')?.value||'',status=document.getElementById('mapProviderStatus')?.value||'',vendor=document.getElementById('mapVendorFilterV244')?.value||'',counts={};layer.querySelectorAll('.airport-map-marker').forEach(m=>{for(const c of ['provider-active','provider-expired','provider-none','airport-active','airport-pending','airport-inactive'])if(m.classList.contains(c))counts[c]=(counts[c]||0)+1});const mode=type?type==='lounge'?'Lounge / Tenant':'Ground Handling Agent':status||vendor?'Service Provider':'Airport';const meaning=type||status||vendor?[['provider-active','Provider active'],['provider-expired','Provider expired'],['provider-none','Provider belum tercatat']]:[['airport-active','Airport active'],['airport-pending','Pending contract'],['airport-inactive','Airport inactive']];host.innerHTML='<strong>'+esc(mode)+' · '+layer.querySelectorAll('.airport-map-marker').length+' marker</strong>'+meaning.filter(([c])=>counts[c]).map(([c,label])=>'<span><i class="legend-dot '+c+'"></i>'+esc(label)+' ('+counts[c]+')</span>').join('')+(layer.querySelectorAll('.airport-map-marker').length?'':'<span>Tidak ada marker sesuai filter.</span>')}
-function render(){controls();const layer=document.getElementById('airportMarkerLayer');if(!layer)return;const a=filtered();layer.innerHTML=a.map(x=>{const p=pos(x.lat,x.lon);return `<button type="button" class="airport-marker airport-marker-v214 airport-map-marker ${markerState(x)}" style="left:${p.left}%;top:${p.top}%" data-code="${esc(x.code)}"><span class="r27-marker-label">${esc(x.code)}</span><i class="r27-selected-pointer"></i></button>`}).join('');layer.dataset.markerCount=String(a.length);updateLegend(layer)}
+function render(){controls();const layer=document.getElementById('airportMarkerLayer');if(!layer)return;window.geBindStationMapMarkers?.(layer);const a=filtered();layer.innerHTML=a.map(x=>{const p=pos(x.lat,x.lon),active=layer.dataset.selectedStation===x.code;return `<button type="button" class="airport-marker airport-marker-v214 airport-map-marker ${markerState(x)}${active?' active':''}" aria-pressed="${active}" aria-label="Buka detail stasiun ${esc(x.code)}" style="left:${p.left}%;top:${p.top}%" data-code="${esc(x.code)}"><span class="r27-marker-label">${esc(x.code)}</span><i class="r27-selected-pointer"></i></button>`}).join('');layer.dataset.markerCount=String(a.length);updateLegend(layer)}
 window.renderAirportMapMarkers=render;window.geAirportRows=rows;window.addEventListener('gx-data-background-refresh',render);
-const boot=()=>{controls();render();setTimeout(render,250);setTimeout(render,1200)};if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+
 })();
 
 
@@ -10341,13 +10477,34 @@ function renderPanel42(c){const x=airport42(c),sets=sets42(c),providers=provider
  };
  const first='service';draw(first);host.querySelectorAll('[data-r42-tab]').forEach(b=>b.onclick=()=>{host.querySelectorAll('[data-r42-tab]').forEach(v=>v.classList.toggle('active',v===b));draw(b.dataset.r42Tab)})}
 
-function hover42(ev,c){const x=airport42(c),sets=sets42(c),providers=provider42(c),t=document.getElementById('mapTooltip'),map=document.getElementById('interactiveMap');if(!t||!map)return;const city=x.city||x.location||x.airportName||c,airport=x.airportName||x.name||x.airport||'',status=x.status||'Active',mr=map.getBoundingClientRect(),er=ev.currentTarget.getBoundingClientRect();t.innerHTML=`<div class="r42-hover-head"><div><b>${esc42(c)} — ${esc42(city)}</b><small>${esc42(airport)}</small></div><span class="${String(status).toLowerCase()==='active'?'active':'inactive'}">${esc42(status)}</span></div><div class="r42-hover-grid"><div><small>Service</small><b>${sets.service.length}</b></div><div><small>Lounge</small><b>${sets.lounge.length}</b></div><div><small>Facility</small><b>${sets.facility.length}</b></div><div><small>System</small><b>${sets.system.length}</b></div></div>${providers.length?`<div class="r42-hover-provider">${esc42(providers[0])}${providers.length>1?` <span>+${providers.length-1}</span>`:''}</div>`:''}`;const tw=Math.min(330,Math.max(270,mr.width*.28));const center=er.left-mr.left+er.width/2;t.style.width=tw+'px';t.style.left=Math.min(mr.width-tw/2-12,Math.max(tw/2+12,center))+'px';const above=er.top-mr.top-t.offsetHeight-14;t.style.top=(above>12?above:Math.min(mr.height-t.offsetHeight-12,er.bottom-mr.top+14))+'px';t.classList.add('show','r42-tooltip')}
+function hover42(ev,c,marker=ev.currentTarget){const x=airport42(c),sets=sets42(c),providers=provider42(c),t=document.getElementById('mapTooltip'),map=document.getElementById('interactiveMap');if(!t||!map)return;const city=x.city||x.location||x.airportName||c,airport=x.airportName||x.name||x.airport||'',status=x.status||'Active',mr=map.getBoundingClientRect(),er=marker.getBoundingClientRect();t.innerHTML=`<div class="r42-hover-head"><div><b>${esc42(c)} — ${esc42(city)}</b><small>${esc42(airport)}</small></div><span class="${String(status).toLowerCase()==='active'?'active':'inactive'}">${esc42(status)}</span></div><div class="r42-hover-grid"><div><small>Service</small><b>${sets.service.length}</b></div><div><small>Lounge</small><b>${sets.lounge.length}</b></div><div><small>Facility</small><b>${sets.facility.length}</b></div><div><small>System</small><b>${sets.system.length}</b></div></div>${providers.length?`<div class="r42-hover-provider">${esc42(providers[0])}${providers.length>1?` <span>+${providers.length-1}</span>`:''}</div>`:''}`;const tw=Math.min(330,Math.max(270,mr.width*.28));const center=er.left-mr.left+er.width/2;t.style.width=tw+'px';t.style.left=Math.min(mr.width-tw/2-12,Math.max(tw/2+12,center))+'px';const above=er.top-mr.top-t.offsetHeight-14;t.style.top=(above>12?above:Math.min(mr.height-t.offsetHeight-12,er.bottom-mr.top+14))+'px';t.classList.add('show','r42-tooltip')}
 function hide42(){const t=document.getElementById('mapTooltip');t?.classList.remove('show','r42-tooltip')}
 window.showAirportTooltip=hover42;window.hideAirportTooltip=hide42;
-function bind42(){const layer=document.getElementById('airportMarkerLayer');if(!layer)return;layer.querySelectorAll('.airport-map-marker').forEach(m=>{if(m.dataset.r42Bound)return;m.dataset.r42Bound='1';m.addEventListener('mouseenter',e=>hover42(e,m.dataset.code));m.addEventListener('mouseleave',hide42);m.addEventListener('click',()=>{document.querySelectorAll('#airportMarkerLayer .airport-map-marker').forEach(x=>x.classList.remove('active'));m.classList.add('active');setTimeout(()=>renderPanel42(m.dataset.code),0)})})}
-const prev42=window.renderAirportMapMarkers;if(prev42&&!prev42.__r42){const w=function(){const v=prev42.apply(this,arguments);bind42();return v};w.__r42=true;window.renderAirportMapMarkers=w}
-function boot42(){bind42();const layer=document.getElementById('airportMarkerLayer');if(layer)new MutationObserver(bind42).observe(layer,{childList:true})}
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(boot42,150));else setTimeout(boot42,150);
+window.geBindStationMapMarkers=function(layer){
+ if(!layer||layer.dataset.stationMapBound)return;
+ layer.dataset.stationMapBound='true';
+ function stationMarker(event){return event.target.closest?.('.airport-map-marker[data-code]');}
+ layer.addEventListener('click',event=>{
+   const marker=stationMarker(event);
+   if(!marker)return;
+   layer.dataset.selectedStation=marker.dataset.code;
+   for(const button of layer.querySelectorAll('.airport-map-marker')){
+     const active=button===marker;
+     button.classList.toggle('active',active);
+     button.setAttribute('aria-pressed',String(active));
+   }
+   hide42();
+   renderPanel42(marker.dataset.code);
+ });
+ layer.addEventListener('pointerover',event=>{
+   const marker=stationMarker(event);
+   if(marker&&!marker.contains(event.relatedTarget))hover42(event,marker.dataset.code,marker);
+ });
+ layer.addEventListener('pointerout',event=>{
+   const marker=stationMarker(event);
+   if(marker&&!marker.contains(event.relatedTarget))hide42();
+ });
+};
 })();
 
 /* Initiative hydration guard: render immediately and again when cached/background data arrives. */
