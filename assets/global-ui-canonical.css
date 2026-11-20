@@ -27,12 +27,7 @@
 }
 
 /* Typography and shared fields */
-html body #cleanPageOutlet,
-html body #cleanPageOutlet input,
-html body #cleanPageOutlet select,
-html body #cleanPageOutlet textarea,
-html body #cleanPageOutlet button,
-html body #cleanPageOutlet table{font-family:inherit}
+html body #cleanPageOutlet,html body #cleanPageOutlet button,html body #cleanPageOutlet table{font-family:inherit}
 html body #cleanPageOutlet label,
 html body .modal-card label,
 html body .planning-modal label,
@@ -50,8 +45,7 @@ html body .lounge-add-modal input:not([type="checkbox"]):not([type="radio"]),
 html body .lounge-add-modal select,
 html body .lounge-add-modal textarea{
   box-sizing:border-box;width:100%;min-height:var(--ui-control-h);height:var(--ui-control-h);margin-top:0;padding:0 12px;
-  border:1px solid var(--ui-border);border-radius:var(--ui-radius);background:#fff;color:var(--ui-text);
-  font-family:inherit;font-size:13px;font-weight:400;line-height:1.35;text-align:left;outline:0;box-shadow:none;
+  border:1px solid var(--ui-border);border-radius:var(--ui-radius);background:#fff;color:var(--ui-text);text-align:left;outline:0;box-shadow:none;
 }
 html body #cleanPageOutlet textarea,
 html body .modal-card textarea,
@@ -64,7 +58,7 @@ html body .modal-card textarea::placeholder,
 html body .planning-modal input::placeholder,
 html body .planning-modal textarea::placeholder,
 html body .lounge-add-modal input::placeholder,
-html body .lounge-add-modal textarea::placeholder{color:#91a2b5;opacity:1;font-weight:400}
+html body .lounge-add-modal textarea::placeholder{color:#91a2b5;opacity:1;}
 html body #cleanPageOutlet input:not([type="checkbox"]):not([type="radio"]):focus,
 html body #cleanPageOutlet select:focus,
 html body #cleanPageOutlet textarea:focus,
@@ -184,14 +178,14 @@ html body #cleanPageOutlet .search-filter-toggle::after{content:"";position:abso
 html body .ge-combo-toggle-r12:hover,html body .ge-ref-combo-toggle:hover,
 html body #cleanPageOutlet .search-filter-toggle:hover{background:var(--ui-soft)}
 html body #cleanPageOutlet .search-filter-combo>select{display:none}
-html body #cleanPageOutlet .search-filter-input{width:100%;height:var(--ui-control-h);min-height:var(--ui-control-h);margin:0;padding:0 40px 0 12px;border:1px solid var(--ui-navy);border-radius:var(--ui-radius);background:#fff;color:var(--ui-text);font:400 13px/1.2 inherit;box-sizing:border-box}
+html body #cleanPageOutlet .search-filter-input{width:100%;height:var(--ui-control-h);min-height:var(--ui-control-h);margin:0;padding:0 40px 0 12px;border:1px solid var(--ui-navy);border-radius:var(--ui-radius);background:#fff;color:var(--ui-text);box-sizing:border-box}
 html body #cleanPageOutlet .search-filter-menu{display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:30000;max-height:260px;overflow:auto;background:#fff;border:1px solid var(--ui-navy);border-radius:var(--ui-radius);box-shadow:var(--ui-shadow);padding:4px}
 html body #cleanPageOutlet .search-filter-combo.open .search-filter-menu{display:grid}
-html body #cleanPageOutlet .search-filter-option{width:100%;height:34px;border:0;border-radius:5px;background:#fff;color:var(--ui-text);text-align:left;font:400 13px/1.2 inherit;cursor:pointer}
+html body #cleanPageOutlet .search-filter-option{width:100%;height:34px;border:0;border-radius:5px;background:#fff;color:var(--ui-text);text-align:left;cursor:pointer}
 html body #cleanPageOutlet .search-filter-option:hover,html body #cleanPageOutlet .search-filter-option.selected{background:#eef4fa;color:var(--ui-navy)}
-html body .ge-searchable-trigger,html body .ge-station-trigger{box-sizing:border-box;width:100%;height:var(--ui-control-h);min-height:var(--ui-control-h);padding:0 38px 0 12px;border:1px solid var(--ui-border);border-radius:var(--ui-radius);background:#fff;color:var(--ui-text);font:400 13px/1.35 inherit;position:relative;text-align:left;cursor:pointer}
+html body .ge-searchable-trigger,html body .ge-station-trigger{box-sizing:border-box;width:100%;height:var(--ui-control-h);min-height:var(--ui-control-h);padding:0 38px 0 12px;border:1px solid var(--ui-border);border-radius:var(--ui-radius);background:#fff;color:var(--ui-text);position:relative;text-align:left;cursor:pointer}
 html body .ge-searchable-trigger.is-placeholder{color:#91a2b5}
-html body .ge-searchable-trigger::after,html body .ge-station-trigger i{content:"";position:absolute;right:13px;top:50%;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid var(--ui-navy);transform:translateY(-30%);font-size:0}
+html body .ge-station-trigger i{content:"";position:absolute;right:13px;top:50%;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid var(--ui-navy);transform:translateY(-30%);font-size:0}html body .ge-searchable-trigger::after{content:"";position:absolute;right:13px;top:50%;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid var(--ui-navy);transform:translateY(-30%);}
 html body .ge-searchable-menu,html body .ge-station-menu{display:none;position:absolute;left:0;right:0;top:calc(100% + 5px);z-index:120000;max-height:300px;overflow:auto;padding:8px;background:#fff;border:1px solid var(--ui-border);border-radius:var(--ui-radius);box-shadow:var(--ui-shadow)}
 html body .ge-searchable.is-open .ge-searchable-menu,html body .ge-station-menu.show{display:block}
 html body .ge-searchable-menu input{width:100%;height:36px;min-height:36px;margin:0 0 7px;padding:0 10px}
@@ -249,7 +243,7 @@ html body #cleanPageOutlet .ge-submission-toolbar{display:grid;grid-template-col
 html body #cleanPageOutlet .ge-submission-toolbar>*{height:var(--ui-control-h);min-height:var(--ui-control-h);margin:0}
 html body #cleanPageOutlet .ge-table-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 0 10px;color:#718296;font-size:12px}
 html body #cleanPageOutlet .ge-table-controls label{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:400;color:#718296}
-html body #cleanPageOutlet .ge-table-controls select{width:auto;min-width:62px;height:var(--ui-compact-h);min-height:var(--ui-compact-h);margin:0;padding:0 30px 0 9px;font-size:12px}
+html body #cleanPageOutlet .ge-table-controls select{width:auto;min-width:62px;height:var(--ui-compact-h);min-height:var(--ui-compact-h);margin:0;padding:0 30px 0 9px;}
 html body #cleanPageOutlet .ge-table-nav{display:flex;align-items:center;gap:7px}
 html body #cleanPageOutlet .ge-table-nav button{width:32px;height:32px;min-height:32px;padding:0;border:1px solid #c9d5e1;border-radius:7px;background:#fff;color:var(--ui-navy);font-size:18px;cursor:pointer}
 html body #cleanPageOutlet .ge-table-nav button:disabled{opacity:.4;cursor:not-allowed}
@@ -258,7 +252,7 @@ html body #cleanPageOutlet .ge-table-nav button:disabled{opacity:.4;cursor:not-a
 html body.portal-app.portal-shell .ge-title span{font-size:12px;line-height:1.2;color:#dbe8f7;font-weight:400;letter-spacing:0;opacity:1}
 html body.portal-app.portal-shell .ge-session .filter{height:40px;min-width:132px;padding:0 10px;border:1px solid rgba(255,255,255,.45);border-radius:8px;background:rgba(255,255,255,.06)}
 html body.portal-app.portal-shell .ge-session .filter span{font-size:11px;color:#dbe8f7;font-weight:500}
-html body.portal-app.portal-shell .ge-session .filter select{height:38px;min-height:38px;min-width:58px;font-size:13px;font-weight:600;color:#fff;border:0;outline:0;background:transparent;padding:0 14px 0 0}
+html body.portal-app.portal-shell .ge-session .filter select{height:38px;min-height:38px;min-width:58px;color:#fff;border:0;outline:0;background:transparent;padding:0 14px 0 0}
 
 /* Lounge/Tenant and Planning reuse the global controls; only layout is scoped. */
 html body .lounge-master-card,html body .planning-domain-card{border:1px solid #d6e0e9;border-radius:10px;background:#fff;box-shadow:0 5px 16px rgba(20,50,75,.06)}
@@ -357,7 +351,7 @@ html body>.initiative-dialog .ge-picker-pop{z-index:2147482500}
 #cleanPageOutlet .table-wrap,#cleanPageOutlet .table-scroll,#cleanPageOutlet .ge-table-wrap,#cleanPageOutlet .ge-initiative-list,#cleanPageOutlet .ge-table-scroll-runtime{max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain}
 #cleanPageOutlet .table-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 10px;font-size:12px;color:var(--ui-muted)}
 #cleanPageOutlet .table-size-control,#cleanPageOutlet .table-page-control{display:flex;align-items:center;gap:8px}
-#cleanPageOutlet .table-size-control select{width:auto;min-width:68px;height:34px;min-height:34px;padding:0 30px 0 10px;font-size:12px}
+#cleanPageOutlet .table-size-control select{width:auto;min-width:68px;height:34px;min-height:34px;padding:0 30px 0 10px;}
 #cleanPageOutlet .table-page-btn{width:34px;height:34px;min-height:34px;padding:0;border:1px solid var(--ui-navy);border-radius:7px;background:#fff;color:var(--ui-navy);font:600 18px/1 inherit;cursor:pointer}
 #cleanPageOutlet .table-page-btn:disabled{opacity:.35;cursor:not-allowed}
 
@@ -636,7 +630,7 @@ html body #cleanPageOutlet select option{text-align:left}
 
 /* Canonical multi-select field: field appearance, left-aligned text, checkbox menu. */
 html body .ge-picker-r11{position:relative;width:100%;}
-html body .ge-picker-field{box-sizing:border-box;width:100%;min-height:48px;padding:0 42px 0 14px;border:1px solid #c8d7e4;border-radius:10px;background:#fff;color:#173b54;display:flex;align-items:center;justify-content:flex-start;text-align:left;font:inherit;font-weight:400;cursor:pointer;position:relative;box-shadow:none;}
+html body .ge-picker-field{box-sizing:border-box;width:100%;min-height:48px;padding:0 42px 0 14px;border:1px solid #c8d7e4;border-radius:10px;background:#fff;color:#173b54;display:flex;align-items:center;justify-content:flex-start;text-align:left;cursor:pointer;position:relative;box-shadow:none;}
 html body .ge-picker-field:focus{outline:none;border-color:#6f8eaa;box-shadow:0 0 0 3px rgba(6,43,99,.08);}
 html body .ge-picker-field>span:first-child{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;}
 html body .ge-picker-caret{position:absolute;right:14px;top:50%;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #173b54;transform:translateY(-35%);}

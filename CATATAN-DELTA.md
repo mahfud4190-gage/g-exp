@@ -35,3 +35,9 @@ Planning Workspace memakai satu navigasi yang menghitung semua hasil filter. Gri
 Runtime tabel bersama mengenali kolom Actions, Aksi, Kelola, dan Tindakan, termasuk pada tabel dengan paginasi sendiri. Tombol ringkas tersusun mendatar, dengan ruang berdasarkan isi kolom dan scroll horizontal pada pembungkus tabel yang sudah tersedia. Kolom tindakan tidak diurutkan. Tidak ada perubahan pada izin atau operasi data dari pembaruan tabel ini.
 
 Build lulus. Simulasi 48 data memeriksa satu navigasi, perubahan 10/20 data per halaman, filter, dan Actions. Pemeriksaan rute lokal mencakup 68 rute dan 21 perpindahan dalam satu tab. Ukuran final pada browser dan deploy belum diverifikasi.
+
+## Tipografi field
+
+Isi input, select, textarea dan kontrol pilih/cari yang dimodelkan sebagai field memakai satu aturan dari portal.css. Font memakai stack portal Inter, Segoe UI, Arial, sans-serif, ukuran 14 px, bobot 400, dan line-height 1,35. Placeholder memakai ukuran/jenis font yang sama dengan warna pembeda. Tombol biasa, label, dan panduan mempertahankan hierarki tipografinya.
+
+Aturan lokal yang menduplikasi tipografi field dibersihkan dari portal.css, global-ui-canonical.css dan checklist-share.css. Akibatnya harga utama dan input periode tarif di Planning, serta isi filter, form akun, login dan checklist, memakai dasar yang sama. Build lulus. Pengukuran visual di browser dan deploy belum diuji.
