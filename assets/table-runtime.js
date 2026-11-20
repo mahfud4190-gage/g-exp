@@ -84,6 +84,16 @@ function geTableActionCells(table,rows){
     for(const cell of row.cells){
       if(cell.colSpan===1&&actionColumns.has(index)){
         cell.classList.add('ge-table-action-cell');
+        const direct=[...cell.children].filter(item=>item.matches(control));
+        if(direct.length){
+          let group=[...cell.children].find(item=>item.classList.contains('ge-table-action-group'));
+          if(!group){
+            group=table.ownerDocument.createElement('div');
+            group.className='ge-table-action-group';
+            cell.insertBefore(group,direct[0]);
+          }
+          group.append(...direct);
+        }
         for(const item of cell.children){
           if(!item.matches(control)&&[...item.children].some(child=>child.matches(control)))item.classList.add('ge-table-action-group');
         }
