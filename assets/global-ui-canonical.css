@@ -131,6 +131,49 @@ html body .btn.compact,html body .ge-btn.compact,
 html body .row-actions .btn,html body .row-actions .ge-btn,
 html body td .btn,html body td .ge-btn{min-height:var(--ui-compact-h);height:var(--ui-compact-h);padding:0 11px;font-size:12.5px;font-weight:500;border-radius:7px}
 
+/* Shared table actions use intrinsic width; the table scrolls on narrow screens. */
+.ge-table-action-scroll {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow-x: auto;
+}
+html body table :is(th.ge-table-action-heading,td.ge-table-action-cell) {
+  width: 1%;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+html body table td.ge-table-action-cell {
+  padding-block: 6px;
+}
+html body table .ge-table-action-cell > .ge-table-action-group {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-width: max-content;
+  margin: 0;
+  padding: 0;
+  vertical-align: middle;
+}
+html body table .ge-table-action-cell :is(button,.btn,.ge-btn) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  min-height: var(--ui-compact-h);
+  padding: 4px 10px;
+  margin: 0;
+  line-height: 1.2;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+html body table .ge-table-action-cell > :is(button,a,form) + :is(button,a,form) {
+  margin-inline-start: 6px;
+}
+
 /* Integrated searchable controls; no detached browser-looking button. */
 html body .ge-combo-r12,html body .ge-ref-combo,html body .ge-searchable,html body .search-filter-combo{position:relative;width:100%;min-width:0}
 html body .ge-combo-input,html body .ge-ref-combo>input{padding-right:40px}
@@ -487,7 +530,7 @@ html body .ge-nav-link.active,html body .sidebar a.active,html body [data-nav].a
 #cleanPageOutlet .planning-record-body dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 16px;margin:2px 0 8px}
 #cleanPageOutlet .planning-record-body dl>div{display:block;min-width:0}
 #cleanPageOutlet .planning-record-body dd{overflow-wrap:anywhere}
-#cleanPageOutlet .planning-row-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:auto}
+#cleanPageOutlet .planning-record-card .planning-row-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:auto}
 #cleanPageOutlet .planning-category-grid{grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
 #cleanPageOutlet .planning-category-grid>a.planning-category-visual{display:grid;grid-template-rows:145px auto;overflow:hidden;padding:0;min-height:230px}
 #cleanPageOutlet .planning-category-visual img{width:100%;height:145px;object-fit:cover;display:block}

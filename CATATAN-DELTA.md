@@ -27,3 +27,11 @@ Jika Firebase Admin belum dikonfigurasi, permintaan ditolak sebelum operasi penu
 Pada site Netlify yang mengalami error, cek Project configuration > Environment variables. Isi FIREBASE_SERVICE_ACCOUNT_JSON menggunakan service account project Firebase portal. Kode juga mendukung kombinasi FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, dan FIREBASE_PRIVATE_KEY. Aktifkan untuk Functions pada konteks deploy yang digunakan, lalu buat deploy baru. Simpan nilai hanya di pengaturan Netlify.
 
 Verifikasi lokal: build lulus. Simulasi kredensial hilang memastikan dialog tetap terbuka, perjanjian belum masuk daftar, dan retry mempertahankan ID. Geometri dialog dan konfigurasi penyimpanan pada Netlify belum diverifikasi.
+
+## Paginasi dan Actions
+
+Planning Workspace memakai satu navigasi yang menghitung semua hasil filter. Grid dan Details memakai halaman, urutan, serta jumlah baris 10/20/50 yang sama. Pengurutan Planning diterapkan sebelum pemotongan halaman. Form Management dan Service Experience sudah memiliki paginasi masing-masing dan tetap memakai paginasi tersebut.
+
+Runtime tabel bersama mengenali kolom Actions, Aksi, Kelola, dan Tindakan, termasuk pada tabel dengan paginasi sendiri. Tombol ringkas tersusun mendatar, dengan ruang berdasarkan isi kolom dan scroll horizontal pada pembungkus tabel yang sudah tersedia. Kolom tindakan tidak diurutkan. Tidak ada perubahan pada izin atau operasi data dari pembaruan tabel ini.
+
+Build lulus. Simulasi 48 data memeriksa satu navigasi, perubahan 10/20 data per halaman, filter, dan Actions. Pemeriksaan rute lokal mencakup 68 rute dan 21 perpindahan dalam satu tab. Ukuran final pada browser dan deploy belum diverifikasi.

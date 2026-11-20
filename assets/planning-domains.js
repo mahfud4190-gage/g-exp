@@ -20,7 +20,7 @@ if(page!=='planning-workspace'&&!definitions[page])return;
 const E=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const paths=Object.keys(definitions).filter(x=>!['airport-cost-structure','lounge-list'].includes(x)),d=definitions[page],hub=page==='planning-workspace';
 const planningImages=Object.assign({LOUNGE:'assets/lounge-garuda.webp',GHA:'assets/checkin-garuda.jpg',AIRPORT_OPERATOR:'assets/boarding-garuda.jpg'},window.GE_PLANNING_CATEGORY_IMAGES||{});
-const categoryImage=id=>planningImages[String(id||'').toUpperCase()]||'assets/boarding-garuda.jpg';let state,selected=(d?.forcedCategory||new URLSearchParams(location.search).get('category')||''),query='',sortKey='',sortDir=1,viewMode='grid',regionFilter='',stationFilter='',statusFilter='',providerFilter='',pageNumber=1,showHistory=false;
+const categoryImage=id=>planningImages[String(id||'').toUpperCase()]||'assets/boarding-garuda.jpg';let state,selected=(d?.forcedCategory||new URLSearchParams(location.search).get('category')||''),query='',sortKey='',sortDir=1,viewMode='grid',regionFilter='',stationFilter='',statusFilter='',providerFilter='',pageNumber=1,pageSize=10,showHistory=false;
 const host=document.getElementById('planningDomainContent');if(!host)return;
 const arr=x=>Array.isArray(x)?x:[];
 const currentRows=list=>Array.isArray(list)?list:[];
@@ -57,7 +57,15 @@ const collectionFor=()=>page==='lounge-list'?'lounges':page==='planning-standard
 const rows=def=>def.collections.flatMap(collection=>currentRows.apply(null,[state?.[collection]]).map(row=>({collection,row,category:categoryOf(row,collection)})));
 function tableColumns(collection,category=selected){const fields=fieldsFor(collection,category);return fields.map(k=>({key:k,label:fieldLabels[k]||k}));}
 function stationField(current=''){const choices=[...new Set([...airportOptions(current),String(current||'').toUpperCase()].filter(Boolean))].sort();return `<label>Station<select id="plan_stationCode" class="ge-input"><option value="">Select station</option>${choices.map(code=>`<option value="${E(code)}" ${code===String(current||'').toUpperCase()?'selected':''}>${E(code)}</option>`).join('')}</select></label>`;}
-const sortValue=(x,key)=>key==='name'?label(x.row):key==='station'?station(x.row):key==='category'?categories(d).find(c=>c.id===x.category)?.name||'':key==='agreement'?x.row.agreement||x.row.documentNumber||x.row.contractNumber||'':String(x.row.status||'');
+function sortValue(x,key){
+ const row=x.row;
+ if(key==='station')return station(row);
+ if(key==='region')return rowRegion(row);
+ if(key==='provider')return rowProvider(row);
+ if(key==='agreement')return row.agreement||row.documentNumber||row.contractNumber||'';
+ if(key==='status')return rowStatus(row);
+ return label(row);
+}
 const url=(p,category='')=>`app.html?page=${p}${category?'&category='+encodeURIComponent(category):''}`;
 const editable=()=>{const s=window.gxGetSession?.()||{};return s.role==='Super Admin'||s.accessLevel==='Admin'||s.accessLevel==='Editor'};
 function status(message){const node=host.querySelector('#planningStatus');if(node)node.textContent=message}
@@ -79,8 +87,9 @@ function renderDomain(){
    &&matchesStatus(x.row,statusFilter)
    &&(!providerFilter||rowProvider(x.row)===providerFilter));
  if(sortKey)visible=visible.slice().sort((a,b)=>sortDir*String(sortValue(a,sortKey)).localeCompare(String(sortValue(b,sortKey)),'id',{numeric:true,sensitivity:'base'}));
- const totalRows=visible.length,pages=Math.max(1,Math.ceil(totalRows/12));pageNumber=Math.max(1,Math.min(pageNumber,pages));visible=visible.slice((pageNumber-1)*12,pageNumber*12);
- const th=(name,key)=>`<th><button class="planning-sort" type="button" data-sort="${E(key)}" aria-label="Urutkan ${E(name)}">${E(name)} ${sortKey===key?(sortDir>0?'↑':'↓'):'↕'}</button></th>`;
+ const pagination=geTablePage(visible.length,pageNumber,pageSize);
+ pageNumber=pagination.page;visible=visible.slice(pagination.start,pagination.end);
+ const th=(name,key)=>`<th scope="col" ${sortKey===key?`aria-sort="${sortDir>0?'ascending':'descending'}"`:''}><button class="planning-sort" type="button" data-sort="${E(key)}" aria-label="Urutkan ${E(name)}">${E(name)} ${sortKey===key?(sortDir>0?'↑':'↓'):'↕'}</button></th>`;
  const action=(x,i)=>`<div class="planning-row-actions">${editable()?`<button class="ge-btn compact" type="button" data-edit="${i}">Edit</button><button class="ge-btn danger compact" type="button" data-delete="${i}">Delete</button>`:`<button class="ge-btn compact" type="button" data-detail="${i}">View</button>`}</div>`;
  const cardFields=x=>`<div><dt>Region / Station</dt><dd>${E([rowRegion(x.row),station(x.row)].filter(Boolean).join(' · '))}</dd></div><div><dt>Provider / Operator</dt><dd>${E(rowProvider(x.row)||'—')}</dd></div><div><dt>Agreement / Reference</dt><dd>${E(x.row.agreement||x.row.documentNumber||x.row.contractNumber||'—')}</dd></div><div><dt>Status</dt><dd>${E(rowStatus(x.row))}</dd></div>`;
  const cards=visible.map((x,i)=>`<article class="lounge-master-card-v237 planning-record-card"><div class="lounge-master-code-v237 planning-record-station">${E(station(x.row))}</div><div class="lounge-master-card-body-v237 planning-record-body"><div class="lounge-master-card-top-v237 planning-domain-card-head"><span class="lounge-type-pill-v237">${E(cats.find(c=>c.id===x.category)?.name||'Service')}</span>${lifecycleStatus(x.row)?`<span class="lounge-days-pill-v237 ${lifecycleStatus(x.row)==='Expired'?'danger':'warning'}">${E(lifecycleStatus(x.row))}</span>`:''}</div><h3>${E(label(x.row))}</h3><dl class="ge-p29-card-fields">${cardFields(x)}</dl>${action(x,i)}</div></article>`).join('')||'<div class="planning-empty">No records match the current selection.</div>';
@@ -105,16 +114,23 @@ function renderDomain(){
  <select id="planningStatusFilter" aria-label="Status"><option value="">All Status</option>${optionList(statuses,statusFilter)}</select>
  </div>
  <div class="lounge-master-toolbar planning-list-head"><h2>${E(selectedName)}</h2><label class="ge-p29-history-toggle"><input id="planningShowHistory" type="checkbox" ${showHistory?'checked':''}> Show agreement history</label></div>
+ <div id="planningPagination"></div>
  <div class="planning-domain-grid-view" ${viewMode==='detail'?'hidden':''}>${cards}</div>
- <div class="ge-table-wrap planning-domain-detail-view" ${viewMode==='grid'?'hidden':''}><table><thead><tr>${th('Name / Record','name')}${th('Station','station')}<th>Region</th><th>Provider / Operator</th>${th('Agreement / Reference','agreement')}<th>Status</th><th>Actions</th></tr></thead><tbody>${table}</tbody></table></div>
- <div class="planning-page-nav"><span>${sourceVisible.length} data · ${totalRows} station entries · Page ${pageNumber} of ${pages} (12/page)</span><div><button type="button" class="ge-btn compact" id="planningPrev" ${pageNumber===1?'disabled':''}>‹ Previous</button><button type="button" class="ge-btn compact" id="planningNext" ${pageNumber===pages?'disabled':''}>Next ›</button></div></div>
+ <div class="ge-table-wrap planning-domain-detail-view" ${viewMode==='grid'?'hidden':''}><table data-table-manual><thead><tr>${th('Name / Record','name')}${th('Station','station')}${th('Region','region')}${th('Provider / Operator','provider')}${th('Agreement / Reference','agreement')}${th('Status','status')}<th scope="col">Actions</th></tr></thead><tbody>${table}</tbody></table></div>
+
  </div></section><input type="file" id="planningFile" accept=".csv,text/csv" hidden><p id="planningStatus" role="status"></p>`;
  const search=host.querySelector('#planningSearch');search.oninput=e=>{const caret=e.target.selectionStart;query=e.target.value.toLocaleLowerCase().trim();pageNumber=1;renderDomain();const input=host.querySelector('#planningSearch');input.focus();input.setSelectionRange(caret,caret)};
  [['planningRegion','regionFilter'],['planningStation','stationFilter'],['planningProvider','providerFilter'],['planningStatusFilter','statusFilter']].forEach(([id,key])=>host.querySelector('#'+id)?.addEventListener('change',e=>{if(key==='regionFilter')regionFilter=e.target.value;else if(key==='stationFilter')stationFilter=e.target.value;else if(key==='providerFilter')providerFilter=e.target.value;else statusFilter=e.target.value;pageNumber=1;renderDomain()}));
- host.querySelectorAll('[data-planning-view]').forEach(b=>b.onclick=()=>{viewMode=b.dataset.planningView;pageNumber=1;renderDomain()});
+ host.querySelectorAll('[data-planning-view]').forEach(b=>b.onclick=()=>{viewMode=b.dataset.planningView;renderDomain()});
  host.querySelector('#planningShowHistory')?.addEventListener('change',e=>{showHistory=e.target.checked;pageNumber=1;renderDomain()});
- host.querySelector('#planningPrev').onclick=()=>{pageNumber--;renderDomain()};host.querySelector('#planningNext').onclick=()=>{pageNumber++;renderDomain()};
- host.querySelectorAll('[data-sort]').forEach(b=>b.onclick=()=>{sortDir=sortKey===b.dataset.sort?-sortDir:1;sortKey=b.dataset.sort;renderDomain()});
+ const pager=host.querySelector('#planningPagination');
+ pager.appendChild(geCreatePager(pagination,(next,size,focusSelector)=>{
+  pageNumber=next;pageSize=size;renderDomain();
+  const nextPager=host.querySelector('#planningPagination');
+  const trigger=nextPager.querySelector(focusSelector);
+  (trigger.disabled?nextPager.querySelector('select'):trigger).focus();
+ }));
+ host.querySelectorAll('[data-sort]').forEach(b=>b.onclick=()=>{sortDir=sortKey===b.dataset.sort?-sortDir:1;sortKey=b.dataset.sort;pageNumber=1;renderDomain()});
  host.querySelectorAll('[data-detail]').forEach(b=>b.onclick=()=>detail(visible[Number(b.dataset.detail)]));host.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>form(visible[Number(b.dataset.edit)]));host.querySelectorAll('[data-delete]').forEach(b=>b.onclick=()=>remove(visible[Number(b.dataset.delete)]));
  host.querySelector('#planningAdd')?.addEventListener('click',()=>form());host.querySelector('#planningTemplate')?.addEventListener('click',()=>{if(collectionFor()==='lounges'){const link=document.createElement('a');link.href='templates/Template_Layanan_Lounge_Tenant_P29.csv';link.download='';link.click();return}csvDownload(fieldsFor(collectionFor()).join(',')+'\r\n','Template_'+page+(selected?'_'+selected:'')+'.csv')});host.querySelector('#planningExport')?.addEventListener('click',()=>exportRows());host.querySelector('#planningUpload')?.addEventListener('click',()=>openBulkUpload());host.querySelector('#planningFile').onchange=e=>{const f=e.target.files?.[0];if(f)previewBulkFile(f);e.target.value=''};
 }

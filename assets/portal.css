@@ -4912,8 +4912,6 @@ html body .login-logos .garuda-logo{display:block;width:145px;height:52px;max-he
 .gx-table-standard .gx-col-date,.gx-table-standard .gx-cell-date, .gx-table-standard .gx-col-status,.gx-table-standard .gx-cell-status{white-space:nowrap}
 .gx-table-standard .gx-col-document{min-width:150px}
 .gx-table-standard .gx-cell-document{max-width:280px}
-.gx-table-standard .gx-col-action{min-width:128px}
-.gx-table-standard .gx-cell-action{white-space:nowrap}
 .gx-table-standard .gx-cell-long{overflow-wrap:anywhere;word-break:break-word}
 .gx-table-standard th.sortable-th{cursor:pointer}
 .gx-table-standard th.sortable-th:focus-visible{outline:2px solid #1783be;outline-offset:-2px}
@@ -4959,7 +4957,6 @@ html body.portal-ready.portal-shell-ready>.footer b{display:inline-block;line-he
 @media(max-width:700px){
   .gx-table-standard{min-width:0}
   .gx-table-standard th,.gx-table-standard td{padding:9px 10px}
-  .gx-table-standard .gx-cell-action{white-space:normal;min-width:120px}
   .gx-status-badge{font-size:10px}
 }
 
@@ -5517,8 +5514,7 @@ html body.portal-ready.portal-shell-ready.e1-page .ge-sidebar-toggle:hover{backg
 .planning-domain-page .planning-domain-list{padding:22px 24px;min-width:0}
 .planning-list-head{display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:18px}
 .planning-list-head h2{margin:0;font-size:1.25rem;color:#102d52}
-.planning-toolbar,.planning-row-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.planning-row-actions{white-space:nowrap}
+.planning-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .planning-filters{margin:0 0 16px}
 .planning-filters input{width:100%;box-sizing:border-box;min-height:42px;padding:10px 13px}
 .planning-domain-page .ge-table-wrap{overflow:auto}
@@ -5548,7 +5544,6 @@ html body.portal-ready.portal-shell-ready.e1-page .ge-sidebar-toggle:hover{backg
 .planning-domain-card dd{margin:2px 0 0;font-weight:600;color:#263e55}
 .planning-domain-card .planning-row-actions{margin-top:auto}
 .planning-empty{padding:28px;text-align:center;color:#70849a;background:#fff;border:1px dashed #c8d6e4;border-radius:12px}
-.planning-row-actions{display:flex;flex-wrap:wrap;gap:8px}
 .planning-domain-list .planning-toolbar{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 .planning-domain-detail-view{margin-top:14px}
 .planning-domain-detail-view table{width:100%;border-collapse:collapse}
@@ -5700,8 +5695,7 @@ body.lounge-reference-v237 .lounge-expiry-warning b{color:#855c17}
 .planning-provider-workspace .planning-domain-grid-view[hidden],.planning-provider-workspace .planning-domain-detail-view[hidden]{display:none}
 .planning-provider-workspace .planning-domain-card dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .planning-provider-workspace .planning-domain-detail-view table{width:100%}
-.planning-provider-workspace .planning-row-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-@media(max-width:1100px){.planning-provider-workspace .planning-domain-grid-view{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.planning-provider-workspace @media(max-width:1100px){.planning-provider-workspace .planning-domain-grid-view{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.planning-provider-workspace .planning-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.planning-provider-workspace .planning-domain-grid-view{grid-template-columns:minmax(0,1fr)}.planning-provider-workspace .planning-view-picker{margin-left:0}}
 @media(max-width:480px){.planning-provider-workspace .planning-filter-grid{grid-template-columns:minmax(0,1fr)}}
 
@@ -5709,8 +5703,6 @@ body.lounge-reference-v237 .lounge-expiry-warning b{color:#855c17}
 .portal-app.portal-shell .ge-ref-table thead th, .portal-app.portal-shell .ge-ref-table tbody td{vertical-align:middle}
 
 /* Record pager aligns with Lounge/Tenant navigation. */
-.planning-provider-workspace .planning-page-nav{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:16px;font-size:13px;color:#536b7b}
-.planning-provider-workspace .planning-page-nav>div{display:flex;gap:8px}
 
 /* Initiative tables: width-safe layout and controlled user column resizing. */
 .ge-initiative-list th {position:relative;resize:horizontal;overflow:auto;min-width:100px}
@@ -5755,7 +5747,7 @@ html body.portal-ready.portal-shell-ready #cleanPageOutlet .ge-master-primary[hi
 
 /* Unified controls, cards, dialogs and mobile */
 :root{--ge-control-h:44px;--ge-control-gap:10px;--ge-line:#c9d9e8;--ge-card-radius:18px}
-.ge-page-actions,.bulk-action-group,.planning-row-actions,.ge-initiative-actions,.v2554-calendar-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ge-page-actions,.bulk-action-group,.ge-initiative-actions,.v2554-calendar-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .ge-btn,.btn,.compact-btn,button.ge-btn,a.ge-btn{font-family:inherit;font-size:14px;font-weight:700;line-height:1.15;min-height:var(--ge-control-h);padding:0 16px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;gap:7px;box-sizing:border-box}
 select.ge-input,input.ge-input,.filter-grid select,.filter-grid input,#loungeAirportFilter,#loungeRegionFilter,#loungeNameFilter,#loungeStatusFilter{min-height:var(--ge-control-h);font:inherit;border:1px solid #9eb9d2;border-radius:10px;background:#fff;color:#173653;padding:0 14px}
 /* Lounge directory: one filter source and one toolbar geometry. */
@@ -5777,8 +5769,6 @@ select.ge-input,input.ge-input,.filter-grid select,.filter-grid input,#loungeAir
 .planning-provider-workspace .planning-record-body h3{font-size:17px;line-height:1.35;margin:10px 0 18px;color:#06425d}
 .planning-provider-workspace .planning-record-body dl{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin:0}
 .planning-provider-workspace .planning-record-body dt{font-size:10px;color:#8098a2}.planning-provider-workspace .planning-record-body dd{font-size:11px;line-height:1.35;margin:2px 0 0;font-weight:700;color:#476878;overflow-wrap:anywhere}
-.planning-provider-workspace .planning-row-actions{margin-top:16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.planning-provider-workspace .planning-row-actions .ge-btn{height:36px;min-height:36px;padding:0 16px;font-size:12px;border-radius:9px}
 .planning-bulk-upload{display:grid;gap:16px}.planning-upload-drop{display:grid;gap:6px;padding:22px;border:1px dashed #9bb5cf;border-radius:12px;background:#f8fbfe}.planning-upload-drop span{font-weight:700;color:#173c5f}.planning-upload-drop small{color:#71879b}.planning-upload-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px}.planning-upload-summary>div{display:grid;gap:4px;padding:14px;border:1px solid #d6e2ed;border-radius:12px;background:#f8fbfd}.planning-upload-summary b{font-size:22px;color:#103b64}.planning-upload-summary span{font-size:11px;color:#71869a}.planning-upload-summary .success b,.planning-import-ok{color:#137a48}.planning-upload-summary .danger b,.planning-import-bad,.planning-import-error{color:#b42318}
 /* Planning cards use the same information hierarchy as Lounge cards. */
 .planning-record-card{display:grid;grid-template-columns:64px minmax(0,1fr);gap:14px;padding:20px;border:1px solid #d2e0e4;border-radius:18px;background:#fff;box-shadow:none;min-width:0}
