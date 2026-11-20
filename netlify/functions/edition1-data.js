@@ -188,7 +188,7 @@ function cleanData(data){
 async function bumpCacheVersion(db,collection){
   await db.collection('portalMetadata').doc('cacheState').set({version:FieldValue.increment(1),updatedAt:FieldValue.serverTimestamp(),lastCollection:String(collection||'')},{merge:true});
 }
-async function writeOne(db,actor,collection,action,id,raw){
+async function writeOne(db,actor,collection,action,id,raw,{initiativeImport=false}={}){
   if(!COLLECTIONS.has(collection)) throw Object.assign(new Error(`Collection not allowed: ${collection}`),{statusCode:400,code:'COLLECTION_NOT_ALLOWED'});
   if(!(collection==='inbox' && ['CREATE','UPDATE'].includes(action)) && !(collection==='contactMessages' && action==='CREATE' && !isExternalActor(actor)) && !canWrite(actor,collection)) throw Object.assign(new Error(`Write access denied for ${collection}.`),{statusCode:403,code:'FORBIDDEN'});
   if(['users','auditLogs'].includes(collection) && !(actor.role==='Super Admin'||isOperationalAdmin(actor))) throw Object.assign(new Error('Administrative access required.'),{statusCode:403,code:'FORBIDDEN'});
@@ -268,6 +268,23 @@ async function writeOne(db,actor,collection,action,id,raw){
   const now=FieldValue.serverTimestamp();
   const next={...data,updatedAt:now,updatedBy:actor.id}; if(!existing.exists){next.createdAt=now;next.createdBy=actor.id;if(collection==='initiatives'){next.createdByRole=actor.role;next.createdByAccessLevel=actor.accessLevel||''}}else if(collection==='initiatives'){next.createdByRole=prev.createdByRole||'';next.createdByAccessLevel=prev.createdByAccessLevel||''}
   if(action==='CREATE' && existing.exists) throw Object.assign(new Error('Record already exists.'),{statusCode:409,code:'ALREADY_EXISTS'});
+  if(initiativeImport){
+    if(action==='UPDATE'&&!existing.exists)throw Object.assign(new Error('Record no longer exists.'),{statusCode:409,code:'RECORD_CHANGED'});
+    const batch=db.batch();
+    if(action==='CREATE')batch.create(ref,next);
+    else batch.update(ref,next,{lastUpdateTime:existing.updateTime});
+    batch.set(db.collection('portalMetadata').doc('cacheState'),{
+      version:FieldValue.increment(1),updatedAt:now,lastCollection:collection
+    },{merge:true});
+    batch.create(dataQuery(db,'auditLogs').doc(),{
+      actorId:actor.id,actorRole:actor.role,name:actor.name||actor.username||actor.email||actor.id,
+      username:actor.username||actor.email||'',module:collection,object:ref.id,
+      detail:`${collection} ${action.toLowerCase()}`,targetType:'EDITION1_INITIATIVES',targetId:ref.id,
+      action:action==='CREATE'?'Create':'Update',timestamp:now,result:'SUCCESS'
+    });
+    await batch.commit();
+    return {id:ref.id};
+  }
   await ref.set(next,{merge:action==='UPDATE'});
   await bumpCacheVersion(db,collection);
   if(collection==='inbox' && inboxAudience.length)await Promise.all(inboxAudience.map(uid=>dataRef(db,'inbox',`${ref.id}:${uid}`).set({...next,recipientId:uid},{merge:false})));
@@ -315,6 +332,22 @@ exports.handler=async(event)=>{
         // Validate the entire batch before starting any writes.
         if(changes.some(ch=>!['CREATE','UPDATE'].includes(String(ch?.action||'').toUpperCase())))
           return bad(400,'INVALID_BATCH_ACTION','Batch only accepts CREATE and UPDATE.');
+        if(collection==='initiatives'&&body.reportOutcomes===true){
+          const ids=changes.map(change=>String(change.id||''));
+          if(ids.some(id=>!id)||new Set(ids).size!==ids.length)
+            return bad(400,'INVALID_BATCH_IDS','Initiative import requires one unique ID per record.');
+          const result=await Promise.all(changes.map(async change=>{
+            const id=String(change.id);
+            try{
+              await writeOne(db,actor,collection,String(change.action).toUpperCase(),id,change.data||{},{initiativeImport:true});
+              return {id,status:'saved'};
+            }catch(error){
+              const known=error.statusCode>=400&&error.statusCode<500||[5,6,9,10].includes(error.code);
+              return {id,status:known?'failed':'unconfirmed',code:String(error.code||'INITIATIVE_WRITE_ERROR')};
+            }
+          }));
+          return ok({ok:true,source:'Firestore',result});
+        }
         // One authenticated function request for a bulk import. Writes retain the exact
         // writeOne permission/scope/audit contract, but execute concurrently to remove
         // the previous row-by-row network wait experienced by the browser.
