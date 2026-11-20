@@ -11,3 +11,9 @@ Ekstrak isi ZIP ke root branch main dengan baseline gage-portal-test-1.zip. Delt
 ## Verifikasi lokal
 
 npm run build lulus, termasuk pengaman penghapusan dan loader recovery. Uji simulasi DOM mencakup 68 rute dan 21 perpindahan pada tab yang sama. Contoh CSV/XML workbook diuji pada Master Data, Airport, Personnel, tiga jenis GASO, Branch Office Space & Building dan Airport Systems, Lounge/Tenant, Lounge Visitor, Lounge Flights, Station Material, Airport Cost, SkyTeam, Initiative, dan User & Access. Permintaan simpan diarahkan ke API simulasi. Simulasi HTTP 503 pada Lounge/Tenant menampilkan pesan gagal pada dialog dan percobaan ulang mempertahankan ID. Firestore produksi, waktu aktual Netlify, akun nyata dan performa browser riil belum diuji.
+
+## Overlay dan template Lounge/Tenant
+
+Delta ini mencakup seluruh perubahan Runtime & Upload sebelumnya. Dialog portal mendapat ukuran viewport penuh pada densitas desktop dan mobile. Skala desktop untuk konten portal berasal dari aturan densitas yang sudah ada. Hasil visual di deploy belum diverifikasi.
+
+Lounge/Tenant menggunakan Template_Layanan_Lounge_Tenant_P29.csv. Importer menerima nama kolom versi sebelumnya (misalnya airport dan serviceCategory), koma atau titik koma, dan menyebut kolom wajib saat header tidak sesuai. Uji lokal mencakup template P29 asli yang diisi satu baris, template lama, dan CSV titik koma dengan tanggal serial. Ketiganya menampilkan hasil dan menjalankan POST CREATE terhadap API simulasi. Perubahan parser ini berlaku pada Lounge/Tenant.

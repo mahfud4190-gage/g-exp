@@ -21,8 +21,8 @@ html body.portal-ready.portal-shell-ready .tp-modal-backdrop:not(.ge-viewport-ov
 body.portal-ready.portal-shell-ready > .ge-viewport-overlay {
   position: fixed;
   inset: 0;
-  width: 100vw;
-  height: 100dvh;
+  width: auto;
+  height: auto;
   max-width: none;
   max-height: none;
   margin: 0;

@@ -3851,7 +3851,7 @@ function geExcelSerialDateV223(v,timeOnly=false){
   }
   return String(v);
 }
-function geParseCSVV223(text){
+function geParseCSVV223(text,separator=','){
   const rows=[];let row=[],cell='',q=false;
   for(let i=0;i<text.length;i++){
     const c=text[i],n=text[i+1];
@@ -3861,7 +3861,7 @@ function geParseCSVV223(text){
       else cell+=c;
     }else{
       if(c==='"')q=true;
-      else if(c===','){row.push(cell);cell=''}
+      else if(c===separator){row.push(cell);cell=''}
       else if(c==='\n'){row.push(cell);rows.push(row);row=[];cell=''}
       else if(c!=='\r')cell+=c;
     }
@@ -9479,7 +9479,27 @@ window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiative
   window.confirmBulkImportV243=()=>window.confirmBulkImportV231();
 
   function aliases(){
-    return Object.fromEntries(Object.entries(FIELD_HEADERS).map(([k,h])=>[k,[h,h.replaceAll(' ','_'),k]]));
+    const alternate={station:['airport','airport code','stationCode'],name:['serviceName','provider'],serviceType:['serviceCategory'],startDate:['from'],endDate:['until']};
+    return Object.fromEntries(Object.entries(FIELD_HEADERS).map(([key,label])=>[
+      key,[label,label.replaceAll(' ','_'),key,...(alternate[key]||[])]
+    ]));
+  }
+
+  async function readLoungeImport(file){
+    const schema=aliases(),required=['station','name','serviceType'];
+    const candidates=/\.csv$/i.test(file.name)
+      ? [',',';'].map(separator=>({separator,rows:null}))
+      : [{rows:await geReadTabularFileV223(file)}];
+    const text=candidates[0].rows?null:await file.text();
+    for(const candidate of candidates){
+      const rows=candidate.rows||geParseCSVV223(text,candidate.separator);
+      const header=rows.findIndex(row=>{
+        const cells=row.map(geNormalizeHeaderV223);
+        return required.every(key=>schema[key].some(alias=>cells.includes(geNormalizeHeaderV223(alias))));
+      });
+      if(header!==-1)return geRowsToObjectsV223(rows.slice(header),schema);
+    }
+    throw Error('Kolom Station/Airport, Nama Layanan/Provider, atau Jenis Layanan tidak ditemukan. Gunakan Download Template Lounge/Tenant.');
   }
   window.geP29CSVContractHeaders=()=>Object.values(FIELD_HEADERS).slice();
   window.geP29NormalizeCSVRows=(rows)=>normalizeImportRows(rows);
@@ -9490,7 +9510,7 @@ window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiative
     const scheduleValues=[r.priceEffectiveFrom,r.priceEffectiveTo,r.price,r.priceCurrency,r.priceBasis,r.priceNote].map(v=>String(v??'').trim());
     const requiredScheduleValues=scheduleValues.slice(0,4),anySchedule=scheduleValues.some(Boolean),allSchedule=requiredScheduleValues.every(Boolean);
     const raw={...r};
-    raw.station=r.station;raw.name=r.name;raw.serviceType=r.serviceType;
+    raw.station=r.station;raw.name=r.name;raw.serviceType=[...TYPE_SET].find(type=>type.toLowerCase()===String(r.serviceType||'').trim().toLowerCase())||r.serviceType;
     raw.startDate=geNormalizeDateUploadV223(r.startDate);raw.endDate=geNormalizeDateUploadV223(r.endDate);
     raw.priceSchedules=anySchedule?[{effectiveFrom:geNormalizeDateUploadV223(r.priceEffectiveFrom),effectiveTo:geNormalizeDateUploadV223(r.priceEffectiveTo),price:r.price,currency:r.priceCurrency,priceBasis:r.priceBasis,priceNote:r.priceNote}]:[];
     const check=validateInput(raw);
@@ -9580,8 +9600,8 @@ window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiative
     if(!canUpload())return;
     preview.innerHTML='<div class="bulk-import-loading">Membaca, menormalisasi, dan memvalidasi file…</div>';if(confirm)confirm.disabled=true;
     try{
-      const raw=await geReadTabularFileV223(file);
-      const rows=geRowsToObjectsV223(raw,aliases());
+      const rows=await readLoungeImport(file);
+      if(!rows.length)throw Error('Template belum memiliki baris data. Isi minimal satu baris sebelum upload.');
       const result=normalizeImportRows(rows);const summary=buildImportPreview(result);
       state.importRows=result.normalized;state.importGroups=result.groups;state.importSummary=summary;state.importFileName=file.name;
       preview.innerHTML=previewMarkup(result,summary);
