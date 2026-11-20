@@ -34,11 +34,16 @@ function geTableApply(table){
   const pages=Math.max(1,Math.ceil(total/state.size));
   state.page=Math.min(state.page,pages);
   const start=(state.page-1)*state.size, end=start+state.size;
-  rows.forEach((r,i)=>r.style.display=(i>=start&&i<end)?'':'none');
+  rows.forEach((row,i)=>{
+    const display=i>=start&&i<end?'':'none';
+    if(row.style.display!==display)row.style.display=display;
+  });
 
   const from=total?start+1:0, to=Math.min(end,total);
-  state.info.textContent=`Menampilkan ${from}–${to} dari ${total} data`;
-  state.pageInfo.textContent=`Halaman ${state.page} / ${pages}`;
+  const summary=`Menampilkan ${from}–${to} dari ${total} data`;
+  const pageLabel=`Halaman ${state.page} / ${pages}`;
+  if(state.info.textContent!==summary)state.info.textContent=summary;
+  if(state.pageInfo.textContent!==pageLabel)state.pageInfo.textContent=pageLabel;
   state.prev.disabled=state.page<=1;
   state.next.disabled=state.page>=pages;
 }
@@ -106,10 +111,20 @@ function geEnhanceTable(table){
 function geEnhanceAllTables(){
   document.querySelectorAll('table').forEach(geEnhanceTable);
 }
-window.addEventListener('DOMContentLoaded',()=>{
+function geStartTables(){
   setTimeout(geEnhanceAllTables,0);
-  const pageObserver=new MutationObserver(()=>geEnhanceAllTables());
+  const pageObserver=new MutationObserver(records=>{
+    for(const {addedNodes,target} of records){
+      const table=target.nodeType===1?target.closest('table'):null;
+      if(table&&!GETableState.has(table))geEnhanceTable(table);
+      for(const node of addedNodes){
+        if(node.nodeType!==1)continue;
+        if(node.matches('table'))geEnhanceTable(node);
+        else node.querySelectorAll('table').forEach(geEnhanceTable);
+      }
+    }
+  });
   pageObserver.observe(document.body,{childList:true,subtree:true});
-});
-
-
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',geStartTables,{once:true});
+else geStartTables();

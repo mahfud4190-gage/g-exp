@@ -11,10 +11,13 @@ const config={
  'admin':{perm:'admin',collections:['users','inbox','contactMessages','auditLogs','airports','lounges']},
  'berita':{perm:'news',collections:['articles','announcements','faqs','news','documents']},
  'kontak':{perm:'contact',collections:['contactMessages','inbox']},
+ 'lounge-visitor':{perm:'lounge-visitor',collections:['airports','lounges','loungeVisitors']},
+ 'lounge-purchase':{perm:'lounge-purchase',collections:['airports','lounges','loungePurchases']},
+ 'lounge-access':{perm:'lounge-access',collections:['airports','lounges']},
  'lounge-list':{perm:'planning',collections:['lounges','loungeVisitors','serviceProcurement','documents','airports','referenceCatalog']},
  'branch-office-planning':{perm:'planning',collections:['lounges','boSpaces','serviceProcurement','airportSystems','stationMaterials','documents']},
  'gaso-planning':{perm:'planning',collections:['gasoMaster','gasoServiceSupport','gasoPlanningService','airports','documents']},
- 'airport-experience':{perm:'services',collections:['airports','lounges','airportSystems','personnel','serviceProcurement','facilities','assets']}
+ 'airport-experience':{perm:'services',collections:['airports','lounges','groundHandlers','airportSystems','personnel','serviceProcurement','facilities','assets']}
 };
 function pageKey(){const file=(location.pathname.split('/').pop()||'app.html').toLowerCase();return file==='app.html'?String(new URLSearchParams(location.search).get('page')||'index').trim().toLowerCase():file.replace(/\.html$/,'').replace(/^e1-/,'')}
 function session(){return typeof window.gxGetSession==='function'?(gxGetSession()||{}):window.GX_CURRENT_USER||{}}
@@ -42,6 +45,9 @@ function rerender(page=pageKey()){
  else if(page==='admin'){window.renderAdminOverview?.();window.renderAdminInbox?.();window.renderAuditLogs?.();window.p26RenderUsers?.();window.pmLoadPageR2?.();const params=new URLSearchParams(location.search),id=params.get('support'),message=params.get('inbox');if(id||message)window.showAdminSection?.('inbox',null);if(id)window.openSupportConversation?.(id);else if(message)window.openInboxDetail?.(message)}
  else if(page==='berita'){window.renderArticles?.();window.renderAnnouncements?.();window.renderFaqs?.();window.renderAnnouncementLibraryV246?.()}
  else if(page==='kontak'){if(!document.getElementById('supportConversations')){const el=document.createElement('section');el.id='supportConversations';el.className='card contact-form-card';document.querySelector('.contact-layout')?.after(el)}window.supportList?.();const id=new URLSearchParams(location.search).get('support');if(id)window.openSupportConversation?.(id)}
+ else if(page==='lounge-visitor'){window.renderLoungeVisitors?.()}
+ else if(page==='lounge-access'){window.geInitLoungeAccessPage?.()}
+ else if(page==='lounge-purchase'){window.renderPurchaseV232?.()}
  else if(page==='lounge-list'){window.geInitLoungeP29?.();window.renderLounges?.();window.renderLoungeVisitors?.();window.renderLoungePriceSummaryV243?.();window.renderLoungeCardsV237?.();window.geInitFilterCombosR8?.('lounge')}
  else if(page==='branch-office-planning'){window.geRenderPlanningPage?.();window.renderAirportSystems?.();window.renderLoungeProcurement?.();window.renderBOSpaces?.()}
  else if(page==='gaso-planning'){window.renderGasoAllV231?.()}
@@ -62,9 +68,10 @@ async function boot(page=pageKey()){
   if(serial!==bootSerial)return;rerender(page);window.dispatchEvent(new Event('gx-inbox-ready'));
   if(!cfg.collections.includes('inbox'))store.hydrate(['inbox']).then(()=>window.dispatchEvent(new Event('gx-inbox-ready'))).catch(e=>console.warn('[Inbox notifications]',e));
   showStatus('');
- }catch(e){console.error('[Edition1 boot]',e);showStatus(e?.message||'Firebase / Firestore tidak dapat diakses.',true)}
+ }catch(e){if(serial!==bootSerial)return;console.error('[Edition1 boot]',e);showStatus(e?.message||'Firebase / Firestore tidak dapat diakses.',true)}
 }
 window.geEdition1PageBoot=boot;
+window.geCancelEdition1PageBoot=()=>{bootSerial++};
 window.geEdition1PageRerender=rerender;
 if(!window.__geEdition1BgBound){window.__geEdition1BgBound=true;window.addEventListener('gx-data-background-refresh',()=>{try{rerender(pageKey())}catch(e){console.warn('[Edition1 background rerender]',e)}})}
 })();

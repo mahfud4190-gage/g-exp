@@ -526,7 +526,7 @@ html body .ge-nav-link.active,html body .sidebar a.active,html body [data-nav].a
 #cleanPageOutlet .p31.p3-user-page .table-wrap{max-height:420px;overflow:auto}
 
 /* Responsive density and controls. */
-@media(min-width:1100px){html.ge-portal-density{zoom:.9}}
+@media(min-width:1100px){html.ge-portal-density{zoom:.81}}
 @media(max-width:1099px){html.ge-portal-density{zoom:1}}
 @media(max-width:1100px){#cleanPageOutlet .airport-map-shell-v216{grid-template-columns:1fr}#cleanPageOutlet .planning-filter-grid,#cleanPageOutlet #loungeFilterGridR4,#cleanPageOutlet .lounge-filter-grid-ref{grid-template-columns:repeat(2,minmax(0,1fr))}#cleanPageOutlet .p31.p3-user-page>.cards{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:760px){#cleanPageOutlet #r43Monitoring .ge-assess-tabs{gap:0}#cleanPageOutlet #r43Monitoring .ge-assess-tab{padding:0 10px}#cleanPageOutlet #r43Monitoring .ge-submission-toolbar,#cleanPageOutlet .planning-filter-grid,#cleanPageOutlet #loungeFilterGridR4,#cleanPageOutlet .lounge-filter-grid-ref{grid-template-columns:1fr}#cleanPageOutlet .planning-domain-grid-view{grid-template-columns:1fr}#cleanPageOutlet .planning-record-card{grid-template-columns:72px minmax(0,1fr);padding:15px;gap:12px}#cleanPageOutlet .planning-record-body dl{grid-template-columns:1fr}#cleanPageOutlet .p31.p3-user-page>.head{flex-direction:column}#cleanPageOutlet .p31.p3-user-page>.cards,#cleanPageOutlet .p31.p3-user-page>.grid2{grid-template-columns:1fr}}

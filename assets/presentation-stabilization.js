@@ -9,7 +9,7 @@
     'index.html': ['dashboard','Ground Experience Dashboard','Central workspace untuk memantau service experience, airport, inisiatif, lounge, dokumen, dan informasi Ground Experience.'],
     'network-stations.html': ['airport-experience-network','Airport Experience Network','Network overview, station profile, responsible organization and operational coverage.'],
     'airport-experience-map.html': ['airport-experience-map','Airport Experience Map','Peta jaringan airport dan konteks experience per lokasi.'],
-    'station-360.html': ['station-profile-360','Station Profile / 360','One station view: identity, organization, service location, capability, readiness, agreement and CX context.'],
+    'station-360.html': ['station-profile-360','Station 360','One station view: identity, organization, service location, capability, readiness, agreement and CX context.'],
     'customer-experience.html': ['customer-experience','Customer Experience','Measurement, insight, finding, dan publication untuk customer experience.'],
     'touchpoint.html': ['journey-touchpoint','Touch Point & Station Condition','Kondisi layanan per station/Branch Office, termasuk foto, status, dan keterangan terbaru.'],
     'standar.html': ['service-standard','Standar Layanan Garuda Indonesia','Framework People • Process • Premises untuk menjaga konsistensi service delivery.'],
@@ -90,7 +90,7 @@
 
   function decorateStatusCells(table){
     const heads=[...(table.tHead?.rows?.[0]?.cells||[])].map(x=>String(x.textContent||'').trim().toLowerCase());
-    [...table.tBodies].forEach(tb=>[...tb.rows].forEach(row=>row.cells.forEach((cell,i)=>{
+    [...table.tBodies].forEach(tb=>[...tb.rows].forEach(row=>Array.from(row.cells).forEach((cell,i)=>{
       const h=heads[i]||'';
       if(/status|state|result|availability|publication|workflow|condition|severity|decision|pencapaian/i.test(h)){
         if(cell.children.length===1 && cell.firstElementChild.matches?.('span,.pill,.planning-status,[class*="status"]')) decorateStatusElement(cell.firstElementChild);
@@ -213,9 +213,17 @@
     wirePlanningCards();
     wireContractFollowupContext();
     if(typeof MutationObserver==='function'){
-      const observer=new MutationObserver(()=>{
-        enhanceTables();
-        applyStandaloneStatuses();
+      let frame=0;
+      const observer=new MutationObserver(records=>{
+        const selector='table,.pill,.planning-status,[class*="status-"],[class*="ge-badge"]';
+        const relevant=records.some(record=>record.target.closest?.('table')||
+          Array.from(record.addedNodes).some(node=>node.nodeType===1&&(node.matches(selector)||node.querySelector(selector))));
+        if(!relevant||frame)return;
+        frame=requestAnimationFrame(()=>{
+          frame=0;
+          enhanceTables();
+          applyStandaloneStatuses();
+        });
       });
       observer.observe(document.body,{childList:true,subtree:true});
     }

@@ -4651,22 +4651,6 @@ html body .geo-map-image-v216{filter:saturate(.52) contrast(.96)}
 @media(max-width:1180px){html body .map-search-tools{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:820px){html body.portal-ready.portal-shell-ready>.shell>.main,html body.portal-ready.portal-shell-ready.sidebar-collapsed>.shell>.main{margin-left:0;width:100%;padding:16px}html body .modal-backdrop,html body .tp-modal-backdrop,html body .map-move-modal-backdrop,html body #r8InitiativeBackdrop,html body #r9InitiativeBackdrop{padding:12px}}
 
-/* R10.13: every promoted dialog owns the complete viewport above portal chrome. */
-html body>.ge-viewport-overlay{
-  position:fixed;inset:0;top:0;right:0;bottom:0;left:0;
-  width:100vw;height:100dvh;max-width:none;margin:0;
-  z-index:100000;box-sizing:border-box;align-items:center;justify-content:center;place-items:center;
-}
-html body>.ge-viewport-overlay>.modal-card,
-html body>.ge-viewport-overlay>.initiative-dialog-card,
-html body>.ge-viewport-overlay>.tp-modal,
-html body>.ge-viewport-overlay>.map-move-modal-card,
-html body>.ge-viewport-overlay>.r8-modal-card,
-html body>.ge-viewport-overlay>.r9-dialog-card,
-html body>.ge-viewport-overlay>.box{
-  position:relative;top:auto;right:auto;bottom:auto;left:auto;
-  transform:none;margin:auto;max-height:calc(100dvh - 48px);overflow:auto;
-}
 .tp-cx-summary{display:grid;grid-template-columns:minmax(280px,.9fr) minmax(360px,1.1fr);gap:24px;margin:16px 0 22px;padding:22px 24px;background:#fff;border:1px solid #cfdae7;border-radius:16px}.tp-cx-summary h2{margin:5px 0 6px;color:#062653}.tp-cx-summary p{margin:0;color:#6d8199}.tp-cx-eyebrow{font-size:12px;font-weight:800;letter-spacing:.08em;color:#2476bd}.tp-cx-priority{display:grid;gap:7px}.tp-cx-priority div{display:flex;justify-content:space-between;gap:16px;padding:8px 10px;border-radius:8px;background:#fff3f1;border-left:4px solid #c7433d}.tp-cx-priority span{white-space:nowrap;color:#9d302b}.tp-score{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0;padding:10px;border-radius:10px;background:#f3f7fb;border-left:4px solid #2f789a}.tp-score>div{display:grid;gap:2px}.tp-score span{font-size:12px;color:#71869b}.tp-score b{font-size:18px;color:#123d58}.tp-score em{grid-column:1/-1;font-size:12px;font-style:normal;font-weight:800;color:#256442}.tp-score.attention{background:#fff8e7;border-color:#e29a22}.tp-score.attention em{color:#9b6500}.tp-score.critical{background:#fff0ef;border-color:#c7433d}.tp-score.critical em{color:#a72b27}.tp-score.unavailable{display:block;border-color:#aab8c6;color:#71869b}@media(max-width:900px){.tp-cx-summary{grid-template-columns:1fr}.tp-cx-priority div{align-items:flex-start;flex-direction:column;gap:2px}.tp-score{grid-template-columns:repeat(3,1fr)}}
 
 

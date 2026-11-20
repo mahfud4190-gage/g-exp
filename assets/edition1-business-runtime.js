@@ -2012,9 +2012,9 @@ let GE_LAST_SAVED_SNAPSHOT=null;
 function geSafeClone(v){try{return JSON.parse(JSON.stringify(v))}catch(e){return null}}
 function geAuditUser(){return typeof gxGetSession==='function'?(gxGetSession()||{}):(window.GX_CURRENT_USER||{})}
 function geObjectChangedFields(a,b){
-  const ignore=new Set(['updatedAt','password','raw','content','answer','body','coverKey','documentKey']);
+  const omittedFields=new Set(['updatedAt','password','raw','content','answer','body','coverKey','documentKey']);
   return [...new Set([...Object.keys(a||{}),...Object.keys(b||{})])]
-    .filter(k=>!ignore.has(k)&&JSON.stringify(a?.[k])!==JSON.stringify(b?.[k]))
+    .filter(k=>!omittedFields.has(k)&&JSON.stringify(a?.[k])!==JSON.stringify(b?.[k]))
     .slice(0,8);
 }
 function geAuditPush(logs,action,module,obj,detail){
@@ -7074,11 +7074,7 @@ openPlanningRecordModal=function(type,id=null){
 };
 
 function gePromoteModalViewportV248(modal){
-  if(!modal)return;
-  if(modal.parentElement!==document.body)document.body.appendChild(modal);
-  [['position','fixed'],['inset','0'],['width','100vw'],['height','100vh'],['margin','0'],['z-index','2147483000'],['align-items','center'],['justify-content','center'],['padding','24px'],['box-sizing','border-box']].forEach(([k,v])=>modal.style.setProperty(k,v,'important'));
-  const card=modal.firstElementChild;if(!card)return;
-  [['position','relative'],['inset','auto'],['transform','none'],['margin','auto'],['width','min(1180px, calc(100vw - 48px))'],['max-width','calc(100vw - 48px)'],['max-height','calc(100vh - 48px)'],['overflow','auto'],['box-sizing','border-box']].forEach(([k,v])=>card.style.setProperty(k,v,'important'));
+  if(modal)window.GEOverlayV30?.promote(modal);
 }
 
 savePlanningRecord=function(){
@@ -9682,6 +9678,11 @@ window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiative
   window.renderLounges=renderLounges;
   if(typeof changeLoungeCardPageV237==='function') window.changeLoungeCardPageV237=changeLoungeCardPageV237;
   if(typeof renderLoungeVisitors==='function') window.renderLoungeVisitors=renderLoungeVisitors;
+window.renderPurchaseV232=renderPurchaseV232;
+window.geInitLoungeAccessPage=()=>{
+  fillAirportSelects();
+  refreshScanLoungeOptions();
+};
   if(typeof renderPlanningDocuments==='function') window.renderPlanningDocuments=renderPlanningDocuments;
   if(typeof geRenderPlanningPage==='function') window.geRenderPlanningPage=geRenderPlanningPage;
   if(typeof renderPlanningOverview==='function') window.renderPlanningOverview=renderPlanningOverview;
@@ -10016,6 +10017,21 @@ function coords(x,c){let lat=Number(x?.lat??x?.latitude??x?.coordinates?.lat),lo
 function rows(){const d=db(),base=[],seen=new Set();const add=x=>{const c=codeOf(x);if(!c||seen.has(c))return;const q=coords(x,c);if(!Number.isFinite(q.lat)||!Number.isFinite(q.lon))return;if(typeof window.gxAirportAllowed==='function'&&!window.gxAirportAllowed(c))return;seen.add(c);base.push({...x,code:c,lat:q.lat,lon:q.lon,city:x.city||x.location||'',airportName:x.airportName||x.name||x.airport||'',wilayah:x.wilayah||x.serviceRegion||x.networkRegion||x.region||'Domestik',status:x.status||'Active'})};(d.airports||[]).forEach(add);['lounges','serviceProcurement','stationMaterials','airportSystems','facilities','assets'].forEach(k=>(d[k]||[]).forEach(add));return base}
 function pos(lat,lon){return{left:(Math.max(-20,Math.min(180,lon))+20)/200*100,top:(75-Math.max(-50,Math.min(75,lat)))/125*100}}
 function controls(){const tools=document.querySelector('.map-search-tools');if(!tools)return;if(!document.getElementById('mapProviderType'))tools.insertAdjacentHTML('beforeend','<select id="mapProviderType"><option value="">Semua Service Provider</option><option value="lounge">Lounge / Tenant</option><option value="gha">Ground Handling Agent</option></select><select id="mapProviderStatus"><option value="">Semua Provider Status</option><option value="active">Active</option><option value="expired">Expired</option></select>');['mapProviderType','mapProviderStatus','mapAirportSearch','mapStatusFilter','mapPendingFilter','mapVendorFilterV244'].forEach(id=>{const e=document.getElementById(id);if(e&&!e.dataset.bound){e.dataset.bound='1';e.addEventListener(id==='mapAirportSearch'?'input':'change',render)}})}
+function providers(code){
+ const d=db(),now=new Date();
+ now.setHours(0,0,0,0);
+ const belongs=row=>[row.airport,row.station,row.stationCode,row.stations,row.stationCodes,row.code]
+  .flat().some(value=>String(value||'').trim().toUpperCase()===code);
+ function entry(row,type){
+  const end=row.endDate||row.until||row.effectiveUntil||row.agreementEnd;
+  const expired=(end&&new Date(String(end).slice(0,10)+'T23:59:59')<now)
+   ||/inactive|expired|terminate|closed|non.?active/i.test(String(row.status||row.documentStatus||''));
+  return {type,status:expired?'expired':'active',name:row.provider||row.vendor||row.name||row.serviceName||''};
+ }
+ const related=(d.serviceProcurement||[]).filter(row=>/gha|ground handling|sgha|handling/i.test(String(row.categoryService||row.serviceType||row.scope||row.name||'')));
+ return (d.lounges||[]).filter(belongs).map(row=>entry(row,'lounge'))
+  .concat([...(d.groundHandlers||[]),...related].filter(belongs).map(row=>entry(row,'gha')));
+}
 function filtered(){let a=rows(),q=(document.getElementById('mapAirportSearch')?.value||'').toLowerCase(),st=document.getElementById('mapStatusFilter')?.value||'',type=document.getElementById('mapProviderType')?.value||'',ps=document.getElementById('mapProviderStatus')?.value||'';if(q)a=a.filter(x=>[x.code,x.city,x.airportName,x.gm].join(' ').toLowerCase().includes(q));if(st)a=a.filter(x=>String(x.status)===st);const region=window.GEActiveMapRegion||'';if(region)a=a.filter(x=>String(x.wilayah)===region);const pending=document.getElementById('mapPendingFilter')?.value||'';if(pending)a=a.filter(x=>pending==='pending'?Number(x.pending||0)>0:Number(x.pending||0)===0);const vendor=document.getElementById('mapVendorFilterV244')?.value||'';if(vendor)a=a.filter(x=>providers(x.code).some(p=>p.name===vendor));if(type||ps)a=a.filter(x=>providers(x.code).some(p=>(!type||p.type===type)&&(!ps||p.status===ps)));return a}
 function markerState(x){const type=document.getElementById('mapProviderType')?.value||'',ps=document.getElementById('mapProviderStatus')?.value||'',p=providers(x.code).filter(v=>(!type||v.type===type)&&(!ps||v.status===ps));if(type||ps){if(p.some(v=>v.status==='active'))return'provider-active';if(p.some(v=>v.status==='expired'))return'provider-expired';return'provider-none'}return /inactive/i.test(String(x.status))?'airport-inactive':Number(x.pending||0)>0?'airport-pending':'airport-active'}
 function updateLegend(layer){const host=document.querySelector('.map-legend-v216');if(!host)return;const type=document.getElementById('mapProviderType')?.value||'',status=document.getElementById('mapProviderStatus')?.value||'',vendor=document.getElementById('mapVendorFilterV244')?.value||'',counts={};layer.querySelectorAll('.airport-map-marker').forEach(m=>{for(const c of ['provider-active','provider-expired','provider-none','airport-active','airport-pending','airport-inactive'])if(m.classList.contains(c))counts[c]=(counts[c]||0)+1});const mode=type?type==='lounge'?'Lounge / Tenant':'Ground Handling Agent':status||vendor?'Service Provider':'Airport';const meaning=type||status||vendor?[['provider-active','Provider active'],['provider-expired','Provider expired'],['provider-none','Provider belum tercatat']]:[['airport-active','Airport active'],['airport-pending','Pending contract'],['airport-inactive','Airport inactive']];host.innerHTML='<strong>'+esc(mode)+' · '+layer.querySelectorAll('.airport-map-marker').length+' marker</strong>'+meaning.filter(([c])=>counts[c]).map(([c,label])=>'<span><i class="legend-dot '+c+'"></i>'+esc(label)+' ('+counts[c]+')</span>').join('')+(layer.querySelectorAll('.airport-map-marker').length?'':'<span>Tidak ada marker sesuai filter.</span>')}
@@ -10059,6 +10075,8 @@ function renderPanel42(c){const x=airport42(c),sets=sets42(c),providers=provider
  };
  const first='service';draw(first);host.querySelectorAll('[data-r42-tab]').forEach(b=>b.onclick=()=>{host.querySelectorAll('[data-r42-tab]').forEach(v=>v.classList.toggle('active',v===b));draw(b.dataset.r42Tab)})}
 
+function hover42(ev,c){const x=airport42(c),sets=sets42(c),providers=provider42(c),t=document.getElementById('mapTooltip'),map=document.getElementById('interactiveMap');if(!t||!map)return;const city=x.city||x.location||x.airportName||c,airport=x.airportName||x.name||x.airport||'',status=x.status||'Active',mr=map.getBoundingClientRect(),er=ev.currentTarget.getBoundingClientRect();t.innerHTML=`<div class="r42-hover-head"><div><b>${esc42(c)} — ${esc42(city)}</b><small>${esc42(airport)}</small></div><span class="${String(status).toLowerCase()==='active'?'active':'inactive'}">${esc42(status)}</span></div><div class="r42-hover-grid"><div><small>Service</small><b>${sets.service.length}</b></div><div><small>Lounge</small><b>${sets.lounge.length}</b></div><div><small>Facility</small><b>${sets.facility.length}</b></div><div><small>System</small><b>${sets.system.length}</b></div></div>${providers.length?`<div class="r42-hover-provider">${esc42(providers[0])}${providers.length>1?` <span>+${providers.length-1}</span>`:''}</div>`:''}`;const tw=Math.min(330,Math.max(270,mr.width*.28));const center=er.left-mr.left+er.width/2;t.style.width=tw+'px';t.style.left=Math.min(mr.width-tw/2-12,Math.max(tw/2+12,center))+'px';const above=er.top-mr.top-t.offsetHeight-14;t.style.top=(above>12?above:Math.min(mr.height-t.offsetHeight-12,er.bottom-mr.top+14))+'px';t.classList.add('show','r42-tooltip')}
+function hide42(){const t=document.getElementById('mapTooltip');t?.classList.remove('show','r42-tooltip')}
 window.showAirportTooltip=hover42;window.hideAirportTooltip=hide42;
 function bind42(){const layer=document.getElementById('airportMarkerLayer');if(!layer)return;layer.querySelectorAll('.airport-map-marker').forEach(m=>{if(m.dataset.r42Bound)return;m.dataset.r42Bound='1';m.addEventListener('mouseenter',e=>hover42(e,m.dataset.code));m.addEventListener('mouseleave',hide42);m.addEventListener('click',()=>{document.querySelectorAll('#airportMarkerLayer .airport-map-marker').forEach(x=>x.classList.remove('active'));m.classList.add('active');setTimeout(()=>renderPanel42(m.dataset.code),0)})})}
 const prev42=window.renderAirportMapMarkers;if(prev42&&!prev42.__r42){const w=function(){const v=prev42.apply(this,arguments);bind42();return v};w.__r42=true;window.renderAirportMapMarkers=w}
@@ -10079,4 +10097,4 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 
 try{if(typeof geReadTabularFileV223==='function')window.geReadTabularFileV223=geReadTabularFileV223}catch(_e){}
 /* Canonical Planning Workspace route bridge. */
-(function(){'use strict';function route(){return new URLSearchParams(location.search).get('page')||''}function initLoungeRoute(){if(route()!=='lounge-list')return;const title=document.querySelector('#cleanPageOutlet .lounge-master-page-head h1');if(title){title.textContent='Lounge/Tenant Planning';title.dataset.subpageTitle='1'}try{window.geInitLoungeP29?.()}catch(e){console.error('[Lounge canonical init]',e)}const add=document.getElementById('loungeAddAction');if(add){add.disabled=false;add.onclick=e=>{e.preventDefault();window.openLoungeAddModalV230?.()}}document.querySelectorAll('#geLoungeViewToggle [data-view]').forEach(btn=>{btn.onclick=e=>{e.preventDefault();window.geSetLoungeView?.(btn.dataset.view)}})}window.geInitLoungeRouteCanonical=initLoungeRoute;const mo=new MutationObserver(()=>initLoungeRoute());if(document.body)mo.observe(document.body,{childList:true,subtree:true});setTimeout(initLoungeRoute,0)})();
+(function(){'use strict';function route(){return new URLSearchParams(location.search).get('page')||''}function initLoungeRoute(){if(route()!=='lounge-list')return;const title=document.querySelector('#cleanPageOutlet .lounge-master-page-head h1');if(title){title.textContent='Lounge/Tenant Planning';title.dataset.subpageTitle='1'}try{window.geInitLoungeP29?.()}catch(e){console.error('[Lounge canonical init]',e)}const add=document.getElementById('loungeAddAction');if(add){add.disabled=false;add.onclick=e=>{e.preventDefault();window.openLoungeAddModalV230?.()}}document.querySelectorAll('#geLoungeViewToggle [data-view]').forEach(btn=>{btn.onclick=e=>{e.preventDefault();window.geSetLoungeView?.(btn.dataset.view)}})}window.geInitLoungeRouteCanonical=initLoungeRoute;})();
