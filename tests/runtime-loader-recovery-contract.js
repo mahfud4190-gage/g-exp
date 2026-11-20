@@ -68,7 +68,9 @@ async function run() {
   assert.equal(window.GEStore, firestoreStore);
   assert.equal(scripts.length, 1);
 
-  const loadingFiles = loadSrc('assets/edition1-files.js');
+  assert.equal(window.GEFiles.loadOnDemand, true);
+  assert(!scripts.some(script => script.src === 'assets/edition1-files.js'));
+  const loadingFiles = window.GEFiles.get('fixture');
   scripts.at(-1).onerror();
   await assert.rejects(loadingFiles, /Gagal memuat assets\/edition1-files\.js/);
   const retryFiles = loadSrc('assets/edition1-files.js');

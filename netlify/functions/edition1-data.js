@@ -4,7 +4,7 @@ const { FieldValue } = require('firebase-admin/firestore');
 const {canChangeReadState} = require('./inbox-policy');
 
 const COLLECTIONS = new Set([
-  'airports','initiatives','news','touchpoints','documents','projectEvents','loungePurchases','loungeVisitors',
+  'airports','initiatives','news','touchpoints','documents','projectEvents','loungePurchases','loungeVisitors','flightSchedule',
   'stationMaterials','boSpaces','serviceProcurement','airportSystems','skyPriority','touchpointStandards',
   'gasoMaster','gasoServiceSupport','gasoPlanningService','personnel','articles','announcements','faqs',
   'inbox','auditLogs','users','lounges','standardContent','portalManager','contactMessages','guestbook',
@@ -37,7 +37,7 @@ function isExternalActor(actor){
 function ownsRecord(actor,row){return [row?.ownerUserId,row?.createdBy,row?.actorId,row?.userId].filter(Boolean).map(String).includes(String(actor?.id||''));}
 const MODULE_BY_COLLECTION = {
   initiatives:'initiatives', projectEvents:'calendar', inbox:'inbox', airports:'data', personnel:'data',
-  lounges:'planning', loungeVisitors:'lounge-visitor', loungePurchases:'lounge-purchase',
+  lounges:'planning', loungeVisitors:'lounge-visitor', loungePurchases:'lounge-purchase', flightSchedule:'lounge-flights',
   stationMaterials:'planning', boSpaces:'planning', serviceProcurement:'planning', airportSystems:'planning',
   gasoMaster:'planning', gasoServiceSupport:'planning', gasoPlanningService:'planning', documents:'planning',
   news:'news', articles:'news', announcements:'news', faqs:'news', contactMessages:'contact', guestbook:'contact',
@@ -90,7 +90,7 @@ function allowedStations(actor){
   return new Set(a.map(x=>String(x&&typeof x==='object'?(x.stationCode||x.code||x.iata||x.airportCode||x.id||''):x).trim().toUpperCase()).filter(Boolean));
 }
 function stationsOf(x){
-  const raw=x?.stations ?? x?.stationCodes ?? x?.stationCode ?? x?.airport ?? x?.station ?? x?.relatedAirport ?? [];
+  const raw=(x?.flight&&x?.from&&x?.to?[x.from,x.to]:undefined) ?? x?.stations ?? x?.stationCodes ?? x?.stationCode ?? x?.airport ?? x?.station ?? x?.relatedAirport ?? [];
   const list=Array.isArray(raw)?raw:String(raw||'').split(/[,;]+/);
   return list.map(v=>String(v||'').trim().toUpperCase()).filter(Boolean);
 }
@@ -264,7 +264,7 @@ async function writeOne(db,actor,collection,action,id,raw){
   }
   if(isExternalActor(actor) && collection==='initiatives'){delete data.touchPoint;delete data.touchpoint;delete data.touchPoints;delete data.touchpoints;delete data.station;delete data.stations;data.ownerUserId=actor.id;data.visibility='EXTERNAL_PRIVATE';data.initiativeScope='GENERAL';}
   if(isExternalActor(actor) && collection==='projectEvents'){data.ownerUserId=actor.id;data.visibility='EXTERNAL_PRIVATE';}
-  const station=stationOf({...prev,...data}); if(!isExternalActor(actor) && station && !inScope(actor,{airport:station,stationCode:station})) throw Object.assign(new Error('Station outside account scope.'),{statusCode:403,code:'SCOPE_FORBIDDEN'});
+  const station=stationOf({...prev,...data}); if(!isExternalActor(actor) && station && !inScope(actor,collection==='flightSchedule'?{...prev,...data}:{airport:station,stationCode:station})) throw Object.assign(new Error('Station outside account scope.'),{statusCode:403,code:'SCOPE_FORBIDDEN'});
   const now=FieldValue.serverTimestamp();
   const next={...data,updatedAt:now,updatedBy:actor.id}; if(!existing.exists){next.createdAt=now;next.createdBy=actor.id;if(collection==='initiatives'){next.createdByRole=actor.role;next.createdByAccessLevel=actor.accessLevel||''}}else if(collection==='initiatives'){next.createdByRole=prev.createdByRole||'';next.createdByAccessLevel=prev.createdByAccessLevel||''}
   if(action==='CREATE' && existing.exists) throw Object.assign(new Error('Record already exists.'),{statusCode:409,code:'ALREADY_EXISTS'});
@@ -304,7 +304,7 @@ exports.handler=async(event)=>{
         return ok({ok:true,source:'Firestore',manifest:{version:Number(meta.version||0),updatedAt:meta.updatedAt||null,lastCollection:meta.lastCollection||''}});
       }
       const cols=queryCollections(event); if(!cols.length) return bad(400,'COLLECTION_REQUIRED','At least one collection is required.');
-      const out={}; for(const c of cols) out[c]=await readCollection(db,actor,c); return ok({ok:true,source:'Firestore',collections:out,actor:{id:actor.id,role:actor.role,accessLevel:actor.accessLevel||'',scopeType:actor.scopeType||'CUSTOM'}});
+      const out=Object.fromEntries(await Promise.all(cols.map(async c=>[c,await readCollection(db,actor,c)]))); return ok({ok:true,source:'Firestore',collections:out,actor:{id:actor.id,role:actor.role,accessLevel:actor.accessLevel||'',scopeType:actor.scopeType||'CUSTOM'}});
     }
     if(event.httpMethod==='POST'){
       let body; try{body=JSON.parse(event.body||'{}')}catch{return bad(400,'INVALID_JSON','Invalid JSON body.')}

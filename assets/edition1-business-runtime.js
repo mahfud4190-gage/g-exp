@@ -4005,7 +4005,7 @@ const GE_IMPORT_SCHEMA_V223={
 };
 
 function openBulkImportV223(type){
-  if(type==='visitor'&&!geCanBulkUploadVisitorV223())return;
+  if(type==='visitor'&&!geCanBulkUploadVisitorV223())return geStorageNoticeV223('Akses ditolak','Anda tidak memiliki izin untuk mengimpor Visitor.');
   if(['space','system'].includes(type)&&!gePlanningCanManage())return;
   const schema=GE_IMPORT_SCHEMA_V223[type];if(!schema)return;
   GE_BULK_IMPORT_V223={type,rows:[],fileName:''};
@@ -5085,7 +5085,7 @@ Object.assign(GE_IMPORT_SCHEMA_V223,{
 });
 function geImportSimpleV231(type,rows){
  let added=0,skipped=0;
- if(type==='airport'){rows.forEach(r=>{const code=String(r.code||'').trim().toUpperCase();if(!code){skipped++;return}const existing=data.airports.find(a=>a.code===code);const obj={id:existing?.id||Date.now()+added,code,city:String(r.city||'').trim(),airportName:String(r.airportName||'').trim(),wilayah:String(r.wilayah||'Domestik').trim(),region:String(r.region||'').trim().toUpperCase(),status:String(r.status||'Active').trim(),lat:Number(r.lat||0),lon:Number(r.lon||0),regionSource:'Bulk Upload'};if(existing)Object.assign(existing,obj);else data.airports.push(obj);added++});data.airports.forEach((a,i)=>a.no=i+1);save();renderAirports();return{added,skipped}}
+ if(type==='airport'){rows.forEach(r=>{const code=String(r.code||'').trim().toUpperCase();if(!code){skipped++;return}const existing=data.airports.find(a=>a.code===code);const obj={id:existing?.id||Date.now()+added,code,city:String(r.city||'').trim(),airportName:String(r.airportName||'').trim(),wilayah:String(r.wilayah||'Domestik').trim(),region:String(r.region||'').trim().toUpperCase(),status:String(r.status||'Active').trim(),lat:Number(r.lat||0),lon:Number(r.lon||0),regionSource:'Bulk Upload'};if(existing)Object.assign(existing,obj);else data.airports.push(obj);added++});save();renderAirports();return{added,skipped}}
  if(type==='personnel'){rows.forEach(r=>{if(!String(r.name||'').trim()){skipped++;return}data.personnel.push({id:Date.now()+added,employeeNo:String(r.employeeNo||'').trim(),name:String(r.name||'').trim(),position:String(r.position||'').trim(),sitaCode:String(r.sitaCode||'').trim(),airport:String(r.airport||'').trim().toUpperCase(),function:String(r.function||'').trim().toUpperCase(),email:String(r.email||'').trim()});added++});save();renderPersonnel();return{added,skipped}}
  if(type==='station-material'){rows.forEach(r=>{if(!r.code||!r.product){skipped++;return}data.stationMaterials.push({id:Date.now()+added,code:String(r.code).trim(),product:String(r.product).trim(),area:String(r.area||'').trim(),vendor:String(r.vendor||'').trim(),startDate:String(r.startDate||'').trim(),endDate:String(r.endDate||'').trim(),contractPeriod:[String(r.startDate||'').trim(),String(r.endDate||'').trim()].filter(Boolean).join(' — '),status:String(r.status||'').trim(),documentName:'',documentKey:''});added++});save();renderStationMaterials();return{added,skipped}}
  if(type==='airport-system-v231'){rows.forEach(r=>{if(!r.airport){skipped++;return}data.airportSystems.push({id:Date.now()+added,airport:String(r.airport).trim().toUpperCase(),sbd:String(r.sbd||'').trim(),kiosk:String(r.kiosk||'').trim(),checkin:String(r.checkin||'').trim(),boardingGate:String(r.boardingGate||'').trim(),transferDesk:String(r.transferDesk||'').trim(),provider:String(r.provider||'').trim(),area:String(r.area||'').trim(),remarks:String(r.remarks||'').trim()});added++});save();renderAirportSystems();return{added,skipped}}
@@ -5094,23 +5094,46 @@ function geImportSimpleV231(type,rows){
 }
 async function geConfirmImportPersistedV240(result,successMessage){
  if(!result)return false;
+ const state=GE_BULK_IMPORT_V223;
+ const button=document.getElementById('bulkImportConfirmV223');
+ const label=button?.textContent;
+ state.pending={result,successMessage};
+ const file=document.getElementById('bulkImportFileV223');
+ if(file)file.disabled=true;
+ if(button){button.disabled=true;button.textContent='Menyimpan…'}
  try{
-  if(window.GEStore?.flush)await window.GEStore.flush();
-  closeBulkImportV223();
-  geStorageNoticeV223('Import Selesai',successMessage,result.added?'success':'warning');
+  await store.flush();
+  if(GE_BULK_IMPORT_V223===state){
+   state.pending=null;
+   closeBulkImportV223();
+   geStorageNoticeV223('Import Selesai',successMessage,result.added?'success':'warning');
+  }
   return true;
  }catch(e){
-  console.error('[Bulk Import Firestore]',e);
-  geStorageNoticeV223('Import Gagal',`Data belum tersimpan ke Firestore. ${e?.message||String(e)}`,'error');
+  if(GE_BULK_IMPORT_V223===state){
+   const preview=document.getElementById('bulkImportPreviewV223');
+   preview?.querySelector('[data-save-error]')?.remove();
+   preview?.insertAdjacentHTML('beforeend',`<p data-save-error role="alert">Impor belum selesai. Sebagian baris mungkin sudah tersimpan. ${geEsc(e?.message||String(e))}</p>`);
+  }
   return false;
+ }finally{
+  if(file?.isConnected)file.disabled=false;
+  if(button?.isConnected&&GE_BULK_IMPORT_V223===state){button.disabled=false;button.textContent=label}
  }
 }
 async function confirmBulkImportV231(){
- const {type,rows}=GE_BULK_IMPORT_V223;if(!rows.length)return;let result;
+ const {type,rows,pending}=GE_BULK_IMPORT_V223;
+ if(pending){save();return geConfirmImportPersistedV240(pending.result,pending.successMessage)}
+ if(!rows.length)return;let result;
  if(['airport','personnel','station-material','airport-system-v231','gaso-master','gaso-support','gaso-planning'].includes(type))result=geImportSimpleV231(type,rows);
- else if(type==='lounge')result=geImportLoungeV230(rows);else if(type==='space')result=geImportSpaceV223(rows);else if(type==='system')result=geImportSystemV223(rows);else if(type==='visitor')result=geImportVisitorV223(rows);
- if(!result)return;const extra=result.duplicates!==undefined?` • ${result.duplicates} duplikat`:'';
- return geConfirmImportPersistedV240(result,`${result.added} data berhasil ditambahkan • ${result.skipped} baris dilewati${extra}.`);
+ else if(type==='lounge')result=geImportLoungeV230(rows);
+ else if(type==='space')result=geImportSpaceV223(rows);
+ else if(type==='system')result=geImportSystemV223(rows);
+ else if(type==='visitor')result=geImportVisitorV223(rows);
+ else if(type==='service-procurement-v243')result=geImportServiceProcurementV243(rows);
+ if(!result)return;
+ const extra=result.duplicates!==undefined?` • ${result.duplicates} duplikat`:'';
+ return geConfirmImportPersistedV240(result,`${result.added} data berhasil diproses • ${result.skipped} baris dilewati${extra}.`);
 }
 
 /* ---------- Planning Documents: file download on every available binary ---------- */
@@ -5871,7 +5894,7 @@ renderLoungeVisitors=function(){
 };
 
 /* Flight schedule */
-function geCanManageFlightsV236(){return ['Super Admin','Admin','Branch Office'].includes((geSession()||{}).role)}
+function geCanManageFlightsV236(){const s=geSession()||{};return ['Super Admin','Admin'].includes(s.role)||(s.role==='Branch Office'&&['Editor','Approver','Admin'].includes(s.accessLevel))}
 function geFlightVisibleV236(x){
   const s=geSession()||{};if(['Super Admin','Admin'].includes(s.role)||s.scopeType==='ALL')return true;
   if(['Branch Office','Lounge Staff','Lounge Luar Biasa'].includes(s.role))return typeof gxAirportAllowed==='function'?(gxAirportAllowed(x.from)||gxAirportAllowed(x.to)):true;
@@ -5900,16 +5923,42 @@ function renderFlightsV236(){
   tbody.innerHTML=rows.map((x,i)=>`<tr><td>${i+1}</td><td><b>${geEsc(x.flight)}</b></td><td>${geEsc(x.from)}-${geEsc(x.to)}</td><td>${x.date}</td><td>${x.std||'-'}</td><td>${x.etd||'-'}</td><td>${Number(x.capacity||0).toLocaleString('id-ID')}</td><td><span class="flight-status-v236 ${String(x.status||'').toLowerCase().replace(/\s+/g,'-')}">${geEsc(x.status||'-')}</span></td><td>${geCanManageFlightsV236()?`<div class="visitor-actions"><button class="ge-btn secondary compact-btn" onclick="openFlightModalV236(${x.id})">Edit</button><button class="ge-btn danger compact-btn" onclick="deleteFlightV236(${x.id})">Delete</button></div>`:'-'}</td></tr>`).join('');gePlanningEmpty('flightEmptyV236',rows);if(typeof geEnhanceAllTables==='function')setTimeout(geEnhanceAllTables,0);
 }
 let GE_FLIGHT_BULK_ROWS_V236=[];
-function openFlightBulkV236(){if(!geCanManageFlightsV236())return;GE_FLIGHT_BULK_ROWS_V236=[];flightBulkFileV236.value='';flightBulkPreviewV236.innerHTML='Belum ada file dipilih.';flightBulkConfirmV236.disabled=true;flightBulkModalV236.classList.add('show')}
+function openFlightBulkV236(){if(!geCanManageFlightsV236())return;GE_FLIGHT_BULK_ROWS_V236=[];flightImportBatch=null;flightBulkFileV236.value='';flightBulkPreviewV236.innerHTML='Belum ada file dipilih.';flightBulkConfirmV236.disabled=true;flightBulkModalV236.classList.add('show')}
 function closeFlightBulkV236(){flightBulkModalV236?.classList.remove('show')}
 async function previewFlightBulkV236(file){
-  if(!file)return;try{const raw=await geReadTabularFileV223(file),rows=geRowsToObjectsV223(raw,{flight:['flight'],from:['from'],to:['to'],date:['tanggal','date'],std:['std'],etd:['etd'],capacity:['capacity'],status:['status']});GE_FLIGHT_BULK_ROWS_V236=rows;flightBulkPreviewV236.innerHTML=`<div class="bulk-import-summary"><b>${rows.length}</b><span>baris data terbaca</span></div>`;flightBulkConfirmV236.disabled=!rows.length}catch(e){flightBulkPreviewV236.innerHTML=`<div class="bulk-import-error">${geEsc(e.message||String(e))}</div>`}
+  if(!file)return;flightBulkConfirmV236.disabled=true;flightImportBatch=null;try{const raw=await geReadTabularFileV223(file),rows=geRowsToObjectsV223(raw,{flight:['flight'],from:['from'],to:['to'],date:['tanggal','date'],std:['std'],etd:['etd'],capacity:['capacity'],status:['status']});GE_FLIGHT_BULK_ROWS_V236=rows;flightBulkPreviewV236.innerHTML=`<div class="bulk-import-summary"><b>${rows.length}</b><span>baris data terbaca</span></div>`;flightBulkConfirmV236.disabled=!rows.length}catch(e){flightBulkPreviewV236.innerHTML=`<div class="bulk-import-error">${geEsc(e.message||String(e))}</div>`}
 }
-function confirmFlightBulkV236(){
-  if(!geCanManageFlightsV236())return;let added=0,skipped=0;data.flightSchedule=data.flightSchedule||[];
-  GE_FLIGHT_BULK_ROWS_V236.forEach(r=>{const flight=normalizeFlight(r.flight),from=String(r.from||'').trim().toUpperCase(),to=String(r.to||'').trim().toUpperCase(),date=geNormalizeDateUploadV223(r.date);if(!flight||!from||!to||!date){skipped++;return}data.flightSchedule.push({id:Date.now()+added,flight,from,to,date,std:String(r.std||'').slice(0,5),etd:String(r.etd||'').slice(0,5),capacity:Number(r.capacity||0),status:String(r.status||'Scheduled').trim()});added++});
-  save();closeFlightBulkV236();renderFlightsV236();geStorageNoticeV223('Import Selesai',`${added} penerbangan ditambahkan • ${skipped} dilewati.`,'success');
+let flightImportBatch=null;
+async function confirmFlightBulkV236(){
+ if(!geCanManageFlightsV236()||flightBulkConfirmV236.disabled)return;
+ const button=flightBulkConfirmV236;
+ button.disabled=true;
+ button.textContent='Menyimpan…';
+ if(!flightImportBatch){
+  const result={added:0,skipped:0},rows=[];
+  for(const row of GE_FLIGHT_BULK_ROWS_V236){
+   const flight=normalizeFlight(row.flight),from=String(row.from||'').trim().toUpperCase(),to=String(row.to||'').trim().toUpperCase(),date=geNormalizeDateUploadV223(row.date);
+   if(!flight||!from||!to||!date){result.skipped++;continue}
+   rows.push({id:Date.now()+result.added,flight,from,to,date,std:geNormalizeTimeUploadV223(row.std),etd:geNormalizeTimeUploadV223(row.etd),capacity:Number(row.capacity||0),status:String(row.status||'Scheduled').trim()});
+   result.added++;
+  }
+  if(!rows.length){button.textContent='Import Data';flightBulkPreviewV236.textContent='Tidak ada baris jadwal valid.';return}
+  data.flightSchedule.push(...rows);
+  flightImportBatch=result;
+ }
+ try{
+  save();
+  await store.flush();
+  const {added,skipped}=flightImportBatch;
+  flightImportBatch=null;
+  if(button.isConnected){closeFlightBulkV236();renderFlightsV236();geStorageNoticeV223('Import Selesai',`${added} jadwal tersimpan • ${skipped} dilewati.`,'success')}
+ }catch(error){
+  if(button.isConnected)flightBulkPreviewV236.textContent='Impor belum selesai: '+error.message;
+ }finally{
+  if(button.isConnected){button.textContent='Import Data';button.disabled=false}
+ }
 }
+Object.assign(window,{openFlightBulkV236,closeFlightBulkV236,previewFlightBulkV236,confirmFlightBulkV236,openFlightModalV236,closeFlightModalV236,saveFlightV236,deleteFlightV236,renderFlightsV236,geInitLoungeFlights(){geFlightActionsVisibilityV236();renderFlightsV236()}});
 window.addEventListener('DOMContentLoaded',()=>{geFlightActionsVisibilityV236();renderFlightsV236()});
 
 if(!GE_TAB_OPTIONS.some(x=>x[0]==='lounge-flights'))GE_TAB_OPTIONS.splice(7,0,['lounge-flights','Daftar Penerbangan']);
@@ -8758,7 +8807,7 @@ function notice(t,m,type='success'){if(typeof geStorageNoticeV223==='function')g
 /* Preserve the exact V2.54.4 initiative card rendering; only add Priority filtering. */
 function installInitiativeControls(){
  const host=$('initRows');if(!host)return;
- const title=document.querySelector('.initiative-list-title-v226');
+ const title=document.querySelector('.initiative-list-title-v226')||document.querySelector('#cleanPageOutlet .initiative-page-head,#cleanPageOutlet .ge-page-head,#cleanPageOutlet .page-header,#cleanPageOutlet .head');
  if(title&&!$('geV2554UploadInitiative')){
    const add=title.querySelector('button[onclick*="openInitiativeModalV224"]');
    const wrap=document.createElement('div');wrap.className='v2554-initiative-actions';
@@ -8867,6 +8916,8 @@ function ensureBulk(){
 function openBulk(){ensureBulk();$('geV2554BulkModal').classList.add('show')}
 async function previewBulk(file){
  if(!file)return;
+ $('geV2554Import').disabled=true;
+ $('geV2554BulkStats').textContent='Membaca file…';
  try{
    const ext=file.name.split('.').pop().toLowerCase();let a,b=[];
    if(ext==='csv')a=geParseCSVV223(await file.text());else{a=await parseSheet(file,1);b=await parseSheet(file,2)}
@@ -8877,13 +8928,15 @@ async function previewBulk(file){
    $('geV2554Import').disabled=errors>0||!bulk.init.length;
  }catch(e){notice('File tidak dapat dibaca',e.message||String(e),'warning')}
 }
-function doImport(){
- const mode=$('geV2554Mode').value;data.initiatives=data.initiatives||[];let created=0,updated=0,skipped=0;
- bulk.init.forEach(r=>{const o=r.obj,old=data.initiatives.find(x=>String(x.initiativeCode||'')===String(o.initiativeCode));if(old){if(mode==='create'){skipped++;return}Object.assign(old,o,{id:old.id,workflow:old.workflow||[]});updated++}else{if(mode==='update'){skipped++;return}data.initiatives.push({...o,id:Date.now()+created,workflow:[]});created++}});
- bulk.milestone.forEach(r=>{const x=data.initiatives.find(v=>String(v.initiativeCode||'')===String(r.obj.initiativeCode));if(!x)return;x.workflow=x.workflow||[];const o={...r.obj};delete o.initiativeCode;const old=x.workflow.find(w=>w.title===o.title&&w.dueDate===o.dueDate);if(old)Object.assign(old,o);else x.workflow.push(o)});
- save();$('geV2554BulkModal').classList.remove('show');if(typeof renderInitiatives==='function')renderInitiatives();notice('Import selesai',`${created} dibuat • ${updated} diperbarui • ${skipped} dilewati.`,'success');
+async function doImport(){
+ const button=$('geV2554Import');if(button.disabled||!window.gxCanManage?.())return;button.disabled=true;
+ const mode=$('geV2554Mode').value;data.initiatives=data.initiatives||[];let created=0,updated=0,skipped=0;const imported=new Set();
+ bulk.init.forEach(r=>{const o=r.obj,old=data.initiatives.find(x=>String(x.initiativeCode||'')===String(o.initiativeCode));if(old){if(mode==='create'){skipped++;return}Object.assign(old,o,{id:old.id,workflow:old.workflow||[]});imported.add(o.initiativeCode);updated++}else{if(mode==='update'){skipped++;return}data.initiatives.push({...o,id:crypto.randomUUID(),workflow:[]});imported.add(o.initiativeCode);created++}});
+ bulk.milestone.forEach(r=>{if(!imported.has(r.obj.initiativeCode))return;const x=data.initiatives.find(v=>String(v.initiativeCode||'')===String(r.obj.initiativeCode));if(!x)return;x.workflow=x.workflow||[];const o={...r.obj};delete o.initiativeCode;const old=x.workflow.find(w=>w.title===o.title&&w.dueDate===o.dueDate);if(old)Object.assign(old,o);else x.workflow.push(o)});
+ try{save();await store.flush();$('geV2554BulkModal').classList.remove('show');renderInitiatives();notice('Import selesai',`${created} dibuat • ${updated} diperbarui • ${skipped} dilewati.`,'success')}catch(e){$('geV2554BulkStats').textContent='Impor belum selesai: '+e.message}finally{button.disabled=false}
 }
 
+window.geInitInitiativeBulk=()=>{if(window.gxCanManage?.())installInitiativeControls()};
 window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiativeControls();bindCalendar();ensureBulk();window.geV2554BindGantt?.()},80));
 })();
 
@@ -9421,6 +9474,9 @@ window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiative
     const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Template_Layanan_Lounge_Tenant_P29.csv';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(url);a.remove()},300);
   }
   window.downloadLoungeTemplateV230=downloadTemplate;
+  window.closeBulkImportV223=closeBulkImportV223;
+  window.downloadLoungeVisitorTemplateV225=downloadLoungeVisitorTemplateV225;
+  window.confirmBulkImportV243=()=>window.confirmBulkImportV231();
 
   function aliases(){
     return Object.fromEntries(Object.entries(FIELD_HEADERS).map(([k,h])=>[k,[h,h.replaceAll(' ','_'),k]]));
@@ -9507,9 +9563,10 @@ window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiative
     return `<div class="ge-p29-import-summary"><span>Total <b>${summary.total}</b></span><span>Valid <b>${summary.valid}</b></span><span>Warnings <b>${summary.warnings}</b></span><span>Invalid <b>${summary.invalid}</b></span></div><div class="bulk-preview-table ge-p29-import-table"><table><thead><tr><th>Row</th><th>Station</th><th>Type</th><th>Provider</th><th>Agreement Number</th><th>Agreement Period</th><th>Price / Price Period</th><th>Status</th><th>Validation Message</th></tr></thead><tbody>${rows||'<tr><td colspan="9">Tidak ada data</td></tr>'}</tbody></table></div><p class="ge-p29-import-note">Import mode: CREATE-only. Baris invalid dan duplicate tidak ditulis. Baris multi-price dengan Agreement Number yang sama digabung menjadi satu Agreement dengan beberapa Price Period.</p>`;
   }
 
-  const originalOpen=window.openBulkImportV223;
+  const originalOpen=openBulkImportV223;
   window.openBulkImportV223=function(type){
-    if(type!=='lounge')return originalOpen?.(type);
+    GE_BULK_IMPORT_V223={type,rows:[],fileName:''};
+    if(type!=='lounge')return originalOpen(type);
     if(!canUpload())return;
     state.importRows=[];state.importGroups=[];state.importSummary=null;state.importFileName='';
     const title=document.getElementById('bulkImportTitleV223'),help=document.getElementById('bulkImportHelpV223'),file=document.getElementById('bulkImportFileV223'),preview=document.getElementById('bulkImportPreviewV223'),confirm=document.getElementById('bulkImportConfirmV223'),modal=document.getElementById('bulkImportModalV223');
@@ -9517,6 +9574,7 @@ window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiative
   };
 
   window.previewBulkImportV223=async function(file){
+    if(GE_BULK_IMPORT_V223.type!=='lounge')return previewBulkImportV223(file);
     if(!file)return;
     const preview=document.getElementById('bulkImportPreviewV223'),confirm=document.getElementById('bulkImportConfirmV223');
     if(!canUpload())return;
@@ -9531,31 +9589,37 @@ window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiative
     }catch(e){preview.innerHTML=`<div class="bulk-import-error">File tidak dapat diproses. ${esc(e.message||String(e))}</div>`;state.importRows=[];state.importGroups=[];if(confirm)confirm.disabled=true;}
   };
 
-  const originalConfirm=window.confirmBulkImportV231;
+  const originalConfirm=confirmBulkImportV231;
   window.confirmBulkImportV231=async function(){
-    if(state.importFileName){
-      if(!canUpload())return;
-      const groups=state.importGroups.filter(g=>g.model&&!g.error&&!existingDuplicate(g.model));
-      if(!groups.length){notice('Import Tidak Dilakukan','Tidak ada baris valid yang siap dibuat. Periksa duplicate atau validation error.','warning');return;}
-      let added=0,failures=0;data.lounges=data.lounges||[];
-      groups.forEach(g=>{try{data.lounges.push({...g.model,id:Date.now()+added+Math.floor(Math.random()*10000),no:'',documentName:'',documentKey:''});added++}catch(e){failures++}});
-      if(added){
-        try{
-          data.auditLogs=Array.isArray(data.auditLogs)?data.auditLogs:[];
-          const u=typeof geSession==='function'?geSession():{};
-          data.auditLogs.unshift({id:Date.now()+Math.floor(Math.random()*10000),timestamp:new Date().toISOString(),username:u?.username||'system',name:u?.name||u?.username||'System',role:u?.role||'System',action:'Bulk Import',module:'Lounge/Tenant Planning',object:`${added} Agreement`,detail:`P29 CSV CREATE-only • file ${state.importFileName} • ${state.importSummary?.total||0} rows • ${state.importSummary?.invalid||0} blocked`});
-        }catch(e){}
-        save();
-        try{if(window.GEStore?.flush)await window.GEStore.flush();}
-        catch(e){console.error('[Lounge/Tenant Import Firestore]',e);notice('Import Gagal',`Agreement belum tersimpan ke Firestore. ${e?.message||String(e)}`,'error');return;}
-      }
-      document.getElementById('bulkImportModalV223')?.classList.remove('show');fillAirportSelects?.();renderLounges?.();renderLoungeCardsV237?.();renderLoungePriceSummaryV243?.();
-      notice('Import Selesai',`${added} Agreement dibuat • ${failures} gagal • ${state.importSummary?state.importSummary.invalid:'-'} baris tidak diimport karena validation/duplicate.` ,added?'success':'warning');
-      state.importFileName='';return;
+    const batch=GE_BULK_IMPORT_V223;
+    if(batch.type!=='lounge'||batch.pending)return originalConfirm();
+    if(!state.importFileName||!canUpload())return;
+    const groups=state.importGroups.filter(group=>group.model&&!group.error&&!existingDuplicate(group.model));
+    if(!groups.length){notice('Import Tidak Dilakukan','Tidak ada agreement valid untuk disimpan.','warning');return}
+    data.lounges.push(...groups.map(group=>({...group.model,id:crypto.randomUUID(),no:'',documentName:'',documentKey:''})));
+    save();
+    const skipped=state.importSummary?.invalid||0;
+    if(await geConfirmImportPersistedV240({added:groups.length},`${groups.length} agreement tersimpan • ${skipped} baris dilewati.`)){
+      state.importFileName='';
+      window.dispatchEvent(new CustomEvent('gx-data-hydrated',{detail:{collections:['lounges']}}));
     }
-    return originalConfirm?.();
   };
 
+  window.geOpenLoungePlanningImport=()=>{
+    if(!canUpload())throw new Error('Anda tidak memiliki izin untuk mengimpor Lounge / Tenant.');
+    let layer=document.getElementById('bulkImportModalV223');
+    if(!layer){
+      layer=document.createElement('div');
+      layer.id='bulkImportModalV223';
+      layer.className='modal-backdrop';
+      layer.innerHTML='<div class="modal-card"><h2 id="bulkImportTitleV223"></h2><p id="bulkImportHelpV223"></p><input type="file" id="bulkImportFileV223" accept=".xlsx,.csv"><div id="bulkImportPreviewV223" aria-live="polite"></div><div class="modal-actions"><button type="button" class="ge-btn" data-cancel>Batal</button><button type="button" class="ge-btn primary" id="bulkImportConfirmV223" disabled>Import Data</button></div></div>';
+      document.querySelector('#cleanPageOutlet').appendChild(layer);
+      layer.querySelector('[data-cancel]').onclick=closeBulkImportV223;
+      layer.querySelector('#bulkImportFileV223').onchange=e=>window.previewBulkImportV223(e.currentTarget.files[0]);
+      layer.querySelector('#bulkImportConfirmV223').onclick=()=>window.confirmBulkImportV231();
+    }
+    window.openBulkImportV223('lounge');
+  };
   window.downloadLoungesCSV=function(){
     const lines=[Object.values(FIELD_HEADERS).map(csvCell).join(',')];
     filteredRows().forEach(x=>{
@@ -9718,6 +9782,7 @@ window.geInitLoungeAccessPage=()=>{
   if(typeof renderAirportSystems==='function') window.renderAirportSystems=renderAirportSystems;
   if(typeof submitArticleProposal==='function') window.submitArticleProposal=submitArticleProposal;
   window.addEventListener=_w;
+  window.geReadTabularFileV223=geReadTabularFileV223;
   document.addEventListener=_d;
 })();
 
@@ -10095,6 +10160,5 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 /* canonical action renderer compatibility token: typeof geInitiativeManageButtonsV224==='function'?geInitiativeManageButtonsV224(x):'' */
 
 
-try{if(typeof geReadTabularFileV223==='function')window.geReadTabularFileV223=geReadTabularFileV223}catch(_e){}
 /* Canonical Planning Workspace route bridge. */
 (function(){'use strict';function route(){return new URLSearchParams(location.search).get('page')||''}function initLoungeRoute(){if(route()!=='lounge-list')return;const title=document.querySelector('#cleanPageOutlet .lounge-master-page-head h1');if(title){title.textContent='Lounge/Tenant Planning';title.dataset.subpageTitle='1'}try{window.geInitLoungeP29?.()}catch(e){console.error('[Lounge canonical init]',e)}const add=document.getElementById('loungeAddAction');if(add){add.disabled=false;add.onclick=e=>{e.preventDefault();window.openLoungeAddModalV230?.()}}document.querySelectorAll('#geLoungeViewToggle [data-view]').forEach(btn=>{btn.onclick=e=>{e.preventDefault();window.geSetLoungeView?.(btn.dataset.view)}})}window.geInitLoungeRouteCanonical=initLoungeRoute;})();

@@ -25,7 +25,7 @@
   if(src.includes('assets/dashboard-firestore.js'))src='assets/dashboard-firestore.js';
   const pathname=src.split('?')[0];
   const runtime=runtimeGlobals[pathname];
-  const isReady=value=>runtime.method?typeof value?.[runtime.method]==='function':value?.source===runtime.source;
+  const isReady=value=>runtime.method?typeof value?.[runtime.method]==='function':value?.source===runtime.source&&!value.loadOnDemand;
 
   if(!force){
    if(loaded.has(pathname))return loaded.get(pathname).then(value=>{if(runtime)window[runtime.name]=value;});
@@ -57,6 +57,15 @@
   }
   return promise;
  }
+ const lazyFiles={source:'Firebase Storage',loadOnDemand:true};
+ for(const method of ['put','get','del','download']){
+  lazyFiles[method]=async (...args)=>{
+   await loadSrc('assets/edition1-files.js');
+   return window.GEFiles[method](...args);
+  };
+ }
+ window.GEFiles=lazyFiles;
+ window.geLoadImportTools=()=>loadSrc('assets/edition1-business-runtime.js');
  if(['cx-import'].includes('__loader_contract__')){}
  const loading=document.getElementById('geRouteLoading');
  let navigationId=0;
@@ -69,19 +78,23 @@
   loading.textContent='Memuat '+(window.GE_PAGE_REGISTRY?.[route]?.title||'halaman')+'…';
   loading.hidden=false;
   outlet.setAttribute('aria-busy','true');
+  let stage='Autentikasi';
   try{
    if(!isSharedChecklist){if(!window.GX_AUTH_READY)throw new Error('Authentication bootstrap tidak tersedia.');await window.GX_AUTH_READY;if(!isCurrent()||!window.gxGetSession?.())return;}
    if(!initial){outlet.style.minHeight=Math.max(outlet.offsetHeight,240)+'px';try{window.gePlanningDomainDispose?.()}catch(e){}window.geDisposeRouteOverlays?.();}
    if(historyMode!=='none'){const href='app.html?'+params.toString();history[historyMode==='replace'?'replaceState':'pushState'](null,'',href);}
    if(route==='attention-settings'&&!window.gxHasPermission?.('attention-settings'))throw new Error('Akses tidak tersedia.');
    if(['portal-management','audit-log'].includes(route)&&window.gxGetSession?.()?.role!=='Super Admin')throw new Error('Akses khusus Super Admin.');
+   stage='Modul halaman';
    const def=window.GE_PAGE_REGISTRY?.[route];if(!def)throw new Error('Page tidak ditemukan: '+route);
    document.title=def.title+' — Ground Experience Portal';outlet.innerHTML=def.html;
    if(route==='admin'&&window.gxGetSession?.()?.role!=='Super Admin'){outlet.querySelectorAll('.admin-section-tab').forEach(b=>{if(/Activity Log|Portal Management/.test(b.textContent))b.remove()});outlet.querySelector('#adminSectionAudit')?.remove();outlet.querySelector('#adminSectionPortal')?.remove();}
    for(const href of def.styles||[])ensureStyle(href);
    if(!isSharedChecklist){await loadSrc('assets/edition1-store.js');if(!isCurrent())return;}
    if(['cx-import','customer-experience'].includes(route)){await loadSrc('assets/edition1-store.js');if(!isCurrent())return;await window.GEStore.hydrate(['customerExperience']);if(!isCurrent())return;}
-   for(const item of def.scripts||[]){if(item.src){await loadSrc(item.src,planningRoutes.has(route)&&item.src.includes('planning-domains.js'));if(!isCurrent())return;}else if(item.code){(0,eval)(item.code);}}
+   for(const item of def.scripts||[]){if(item.src==='assets/edition1-files.js')continue;if(item.src){await loadSrc(item.src,planningRoutes.has(route)&&item.src.includes('planning-domains.js'));if(!isCurrent())return;}else if(item.code){(0,eval)(item.code);}}
+   stage='Data halaman';
+   loading.textContent='Memuat data '+def.title+'…';
    if(planningRoutes.has(route))await window.geInitPlanningDomain?.();
    if(route==='asset-facility')await window.GXAssetFacilityP39?.init();
    if(!isCurrent())return;
@@ -110,7 +123,13 @@
    const panel=document.createElement('div');
    panel.className='clean-page-error';
    panel.setAttribute('role','alert');
-   panel.textContent='Runtime halaman gagal dimuat. '+String(err.message||err);
+   panel.textContent=stage+' gagal dimuat. '+String(err.message||err);
+   const retry=document.createElement('button');
+   retry.type='button';
+   retry.className='ge-btn';
+   retry.textContent='Coba lagi';
+   retry.onclick=()=>renderRoute(location.href,{historyMode:'none'});
+   panel.append(' ',retry);
    outlet.replaceChildren(panel);
   }finally{
    if(isCurrent()){

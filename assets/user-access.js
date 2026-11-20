@@ -201,8 +201,15 @@
   async function syncUsers(){
     if(!canManage()||!apiReady())return;try{const r=await gxApi('/auth-list-users',{method:'GET'});if(Array.isArray(r.users)){data.users=r.users.map(u=>({...u,id:String(u.id),airports:Array.isArray(u.airports)?u.airports:[],loungeIds:Array.isArray(u.loungeIds)?u.loungeIds:[],tabs:Array.isArray(u.tabs)?u.tabs:[],permissions:Array.isArray(u.permissions)?u.permissions:[]}));}}catch(e){console.warn('P26 user sync failed:',e.message)}renderUsers();}
 
-  function init(){if(!document.getElementById('adminSectionAccounts'))return;replaceAccountSection();renderUsers();setTimeout(syncUsers,80)}
+  function init(){
+    const section=document.getElementById('adminSectionAccounts');
+    if(!section||section.querySelector('#p26UserRows'))return;
+    replaceAccountSection();
+    renderUsers();
+    setTimeout(syncUsers,80);
+  }
+  window.p26Init=init;
   window.p26OpenUserForm=openUserForm;window.p26OpenUserImport=openImportModal;window.p26RenderUsers=renderUsers;window.p26SyncUsers=syncUsers;
   window.openUserModal=id=>openUserForm(id);window.closeUserModal=closeUserForm;window.renderUserAccounts=renderUsers;window.syncFirebaseUsers=syncUsers;window.resetUserPassword=openResetModal;
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(init,0));else setTimeout(init,0);
+  if(!location.pathname.endsWith('/app.html')){if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init()}
 })();
