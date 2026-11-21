@@ -13,29 +13,11 @@ const selectors=[
   '.r9-portal-dialog', '.ge-viewport-overlay', '.modal.open', '.overlay-backdrop.show', '[data-overlay-backdrop].show', 'dialog[open]', '.ge-ref-backdrop', '.ge-id-backdrop', '.planning-dialog-layer', '.ge-modal-backdrop', '#geGlobalRefModal', '#geV251EventModal',
   '#geV2542DraftModal', '#geCalListModalV2533', '#geV2532ListModal'
 ];
-const selector=selectors.join(',');
-const owned=new Set();
-function moveToBody(el){
-  if(el.parentElement===document.body)return;
-  if(el.closest('#cleanPageOutlet'))owned.add(el);
-  document.body.appendChild(el);
-}
-function promote(root){
-  if(root.matches?.(selector))moveToBody(root);
-  root.querySelectorAll(selector).forEach(moveToBody);
-}
+const matches=()=>document.querySelectorAll(selectors.join(','));
+function promote(){matches().forEach(el=>{if(el.id==='geGlobalRefModal'||el.closest('#geGlobalRefModal'))return;if(el.parentElement!==document.body)document.body.appendChild(el)});}
 function install(){
-  promote(document);
-  new MutationObserver(records=>{
-    for(const record of records){
-      for(const node of record.addedNodes)if(node.nodeType===1)promote(node);
-    }
-  }).observe(document.body,{childList:true,subtree:true});
+  promote();
+  new MutationObserver(promote).observe(document.body,{childList:true,subtree:true});
 }
-window.geMovePortalOverlay=moveToBody;
-window.geDisposeRouteOverlays=()=>{
-  for(const el of owned)el.remove();
-  owned.clear();
-};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install);else install();
 })();

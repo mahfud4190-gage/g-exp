@@ -52,7 +52,7 @@
    document.title=def.title+' — Ground Experience Portal';outlet.innerHTML=def.html;
    if(route==='admin'&&window.gxGetSession?.()?.role!=='Super Admin'){outlet.querySelectorAll('.admin-section-tab').forEach(b=>{if(/Activity Log|Portal Management/.test(b.textContent))b.remove()});outlet.querySelector('#adminSectionAudit')?.remove();outlet.querySelector('#adminSectionPortal')?.remove();}
    for(const href of def.styles||[])ensureStyle(href);
-   const canonicalUi=[...document.querySelectorAll('link[rel="stylesheet"]')].find(x=>x.href&&x.href.includes('/assets/global-ui-canonical.css'));if(canonicalUi)document.head.appendChild(canonicalUi);
+   // Keep the canonical stylesheet mounted and in stable cascade order between routes.
    if(['cx-import','customer-experience'].includes(route)){await loadSrc('assets/edition1-store.js');await window.GEStore.hydrate(['customerExperience']);}
    for(const item of def.scripts||[]){if(item.src){await loadSrc(item.src,planningRoutes.has(route)&&item.src.includes('planning-domains.js'));}else if(item.code){(0,eval)(item.code);}}
    if(typeof window.geEdition1PageBoot==='function')await window.geEdition1PageBoot(route);

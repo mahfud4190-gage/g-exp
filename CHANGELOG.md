@@ -1,20 +1,16 @@
 # CHANGELOG — GAGE Portal
 
-## 2026-11-21 — Integrated 14 Point Build Fix v3
-- Corrected the `planning-master-region-cache-contract.js` test embedded in `tests/regression-gate.js`: validate canonical shared pagination through executable checks of `geTablePage`, and verify Previous/Next wiring, without depending on legacy implementation details from `planning-domains.js`.
-- Replaces all earlier integrated 14-point ZIP packages including BUILD-FIX v2; contains the same functional source changes.
-- Local `npm run build`: PASS, including 59 regression contracts, Firestore safety contracts and the UI integrity gate for 68 routes.
-- This is not an end-to-end test against the deployed Git branch or production Firebase. Recheck the Netlify deploy from the new commit.
+## 2026-11-21 — Integrated 14 Point Runtime Fix v4
+- Master Data Edit/Delete: fixed popup hidden-on-click bug by keeping `#geGlobalRefModal` and its `.ge-ref-backdrop` together in the DOM. Both global overlay promoters now ignore this dedicated popup; stale `ge-portal-overlay` styling is cleared when it opens. Existing NPS/CSI protections, explicit delete authorization and confirmation logic are preserved.
+- Sidebar: removed the repeated `global-ui-canonical.css` DOM relocation on every route change, avoiding a temporary loss of the desktop density/zoom rules.
+- Added `tests/master-dialog-sidebar-stability-contract.js` and ran it separately.
+- Local `npm test`: PASS (59 regression contracts, safety checks and 68-route asset integrity). No changes to Netlify configuration or Firestore Functions beyond those carried from v3.
+- Changes have **not** been validated against live Netlify/Firebase or by real-browser visual snapshots.
 
-## Previous integrated changes (carried forward)
-- Master Data: edit/delete rules distinguish NPS/CSI references from other user-managed records.
-- Monitoring navigation: flat text tabs rather than button styling.
-- Network & Map: marker-attached popups.
-- Notifications: prevent premature dismiss and auto-mark-read.
-- Pagination spacing: shared styling.
-- Periods and Initiative: additional year/range options and touch-point scope handling.
-- Firestore: explicit, authorized deletion safety and regression checks.
-- Runtime: prevent repeated synthetic DOMContentLoaded; expose retry when loading fails.
+## Previous revisions (cumulative, included in this ZIP)
+- v3: corrected Planning pagination contract to validate shared pagination behavior.
+- v2/v1: page navigation regression fixes, runtime script loading, and build tests.
+- Integrated 14 points: Master Data edit/delete permissions for non-NPS/CSI indicators; map popup placement; flat Monitoring tabs; notifications; pagination layout; year selection; Initiative scope; explicit authorized Firestore deletes and protection against cache-driven deletion.
 
-## Deployment instructions
-Extract this **one cumulative ZIP** at the repository root, replacing paths; do not apply old integrated deltas separately. Keep the existing Netlify configuration. Inspect changes before merging to production. The ZIP contains only changed source and test files plus this single cumulative changelog.
+## Install
+Use **this ZIP only** to replace earlier Integrated 14 Point deltas. Extract at the root of the same repository and overwrite matching paths. Do not upload the older integrated delta ZIPs separately. Test Master Data Edit/Delete and 100%-zoom navigation on the new Deploy Preview.

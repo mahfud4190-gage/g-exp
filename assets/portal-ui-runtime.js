@@ -5,7 +5,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 function promoteOverlays(root=document){
  const items=[...(root.querySelectorAll?.(OVERLAYS)||[])];
  root.querySelectorAll?.('[id*="Modal"],[id*="Dialog"]').forEach(el=>{if(el.matches('dialog'))return;const open=el.classList.contains('show')||el.hasAttribute('open')||el.getAttribute('aria-hidden')==='false';const wrapper=el.matches('.modal-backdrop,.overlay-backdrop,.initiative-dialog,[data-modal-root]')||!!el.querySelector('.modal-card,.initiative-dialog-card,.planning-modal,.ge-id-modal,.ge-ref-modal');if(open&&wrapper&&!items.includes(el))items.push(el)});
- items.forEach(el=>{if(el.parentElement!==document.body){if(window.geMovePortalOverlay)window.geMovePortalOverlay(el);else document.body.appendChild(el);}if(!el.classList.contains('ge-portal-overlay'))el.classList.add('ge-portal-overlay');if(!el.getAttribute('role'))el.setAttribute('role','dialog');if(el.getAttribute('aria-modal')!=='true')el.setAttribute('aria-modal','true')})
+ items.forEach(el=>{if(el.id==='geGlobalRefModal'||el.closest('#geGlobalRefModal'))return;if(el.parentElement!==document.body){if(window.geMovePortalOverlay)window.geMovePortalOverlay(el);else document.body.appendChild(el);}if(!el.classList.contains('ge-portal-overlay'))el.classList.add('ge-portal-overlay');if(!el.getAttribute('role'))el.setAttribute('role','dialog');if(el.getAttribute('aria-modal')!=='true')el.setAttribute('aria-modal','true')})
 }
 function normalizeButtons(root=document){
  const targets='.initiative-dialog button,.modal-card button,.planning-modal button,.ge-id-modal button,.ge-ref-modal button,#r43Monitoring button';
