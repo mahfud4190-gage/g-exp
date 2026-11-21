@@ -1,15 +1,26 @@
-# Delta — Master Data Touch Point / Source Safety
+# Monitoring & Assessment — Flat Tabs Fix
 
-Baseline: gage-portal-test-1 + latest cumulative UI fixes already deployed. This delta replaces ONLY the listed JS files. Do not apply the original test-1 ZIP again.
+Baseline: versi `test-1` setelah delta Monitoring UI dan Monitoring Tabs sebelumnya.
 
-Changed files:
-- assets/master-reference.js — stable delegated Edit handler in ID / Master Reference; Edit available on protected NPS/CSI source to correct Journey Areas while source name is read-only; only explicitly manually created touch points show Hapus; server-confirmed record deletion; no background master catalog writes.
-- netlify/functions/edition1-data.js — server denies DELETE_RECORD for any touchpoint not explicitly marked sourceType Manual; imported NPS/CSI remain protected, and their names remain immutable on updates.
+## Ganti hanya
+- `assets/global-ui-canonical.css`
+- `assets/form-management.js`
+- `assets/assessment-workspace.js`
 
-Installation: copy both files to repository root at their exact paths, commit together, review Deploy Preview before production.
+Test: `tests/monitoring-flat-tabs-contract.js` (baru), `tests/monitoring-layout-contract.js` (diperbarui agar mengikuti tab non-button).
 
-Test notes: JavaScript syntax checks passed. Full baseline npm test fails on an unrelated legacy regression 'Route navigation must not re-fire global DOMContentLoaded' because the fully current deployed repo is not available here. End-to-end Firestore and current deployed runtime not tested. Do NOT assume all outstanding UI requests are included.
+## Apa yang berubah
+- Empat tab menjadi navigasi link `role=tab`, tidak lagi memakai elemen `button` yang diwarisi CSS button global; pola yang sama diterapkan ke modul Assessment lama.
+- CSS tab sebelumnya **diganti pada tempatnya**, bukan ditambah override di akhir file. Tidak ada `!important` baru.
+- Tidak ada border kotak, rounded corner, latar button, atau shadow. Hanya garis bawah lurus di tab aktif.
+- Event click disesuaikan dan `preventDefault()` mencegah perubahan hash.
+- Tidak ada perubahan Firebase, data, atau API.
 
-NOT INCLUDED / awaiting verified current source: global multi-year filter, map popup marker avoidance, notification close/reset issue, shared pagination spacing and any other outstanding visual defects. Avoid attempting to repair these from an older snapshot because it can overwrite newer fixes.
+## Uji
+`node --check assets/form-management.js`
+`node --check assets/assessment-workspace.js`
+`node tests/monitoring-flat-tabs-contract.js`
 
-Safety: never write to Firestore automatically while loading reference catalogs. Delete requires confirmation, canEdit, and server-side source protection.
+Browser: hard refresh setelah deploy, cek Overview, Monitoring Works, Form Templates, Submissions, juga navigasi balik. Lakukan pengecekan perbedaan caching pada deploy baru.
+
+Verifikasi: kedua pemeriksaan tab lulus. `npm test` pada salinan baseline kerja masih gagal pada `clean-draft-regression.js` dengan pesan `Route navigation must not re-fire global DOMContentLoaded` (di luar area perubahan tab); belum ada verifikasi visual di Deploy Preview.

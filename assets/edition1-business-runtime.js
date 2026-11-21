@@ -146,7 +146,8 @@ function initiativeMatchesTouchpoint(row,point){
    (points.some(initiativeAllTouchpoints)&&(!point.journeys.size||[...point.journeys].some(journey=>initiativeMatchesJourney(row,journey))));
 }
 function initiativeSummaryModel(){
- const rows=(data.initiatives||[]).filter(geInitiativeScopedV224);
+ const period=window.geSelectedPortalPeriod?.();
+ const rows=(data.initiatives||[]).filter(geInitiativeScopedV224).filter(row=>{if(!period)return true;const first=Number(row.planningYear||row.year||String(row.startDate||row.periodStart||'').match(/20\d{2}/)?.[0]||0);const last=Number(String(row.endDate||row.periodEnd||'').match(/20\d{2}/)?.[0]||first);return !first||(first<=period.end&&Math.max(last,first)>=period.start)});
  const journey=initiativeKey(document.querySelector('.journey-tab.active[data-journey]')?.dataset.journey);
  const catalog=initiativeTouchpointCatalog(rows);
  const points=journey?catalog.filter(point=>!point.journeys.size||point.journeys.has(journey)):catalog;
@@ -7754,6 +7755,12 @@ currentInitiativeRows=function(){
  const focused=window.GE_INITIATIVE_FOCUS_ID_R65;
  if(focused)return (data.initiatives||[]).filter(x=>String(x.id)===String(focused));
  let rows=(data.initiatives||[]).slice();
+ const period=window.geSelectedPortalPeriod?.();
+ if(period)rows=rows.filter(row=>{
+  const first=Number(row.planningYear||row.year||String(row.startDate||row.periodStart||'').match(/20\d{2}/)?.[0]||0);
+  const last=Number(String(row.endDate||row.periodEnd||'').match(/20\d{2}/)?.[0]||first);
+  if(!first)return true;return first<=period.end&&Math.max(last,first)>=period.start;
+ });
  const page=document.getElementById('journeyPageValue')?.value||window.GE_ACTIVE_JOURNEY||'';
  if(page)rows=rows.filter(x=>geMatchesJourneyV252(x,page));
  const q=(document.getElementById('q')?.value||'').toLowerCase();
@@ -7761,7 +7768,7 @@ currentInitiativeRows=function(){
  return rows.filter(x=>{
    const status=typeof geInitiativeStatusV246==='function'?geInitiativeStatusV246(x):'';
    return (!q||`${x.name||''} ${geTPsV252(x).join(' ')} ${x.airport||''} ${x.pic||''}`.toLowerCase().includes(q)) &&
-    (!ft||geTPsV252(x).includes(ft))&&(!fs||status===fs)&&(!fp||x.pic===fp);
+    (!ft||geTPsV252(x).includes(ft)||geTPsV252(x).some(initiativeAllTouchpoints))&&(!fs||status===fs)&&(!fp||x.pic===fp);
  });
 }
 
@@ -10477,7 +10484,32 @@ function renderPanel42(c){const x=airport42(c),sets=sets42(c),providers=provider
  };
  const first='service';draw(first);host.querySelectorAll('[data-r42-tab]').forEach(b=>b.onclick=()=>{host.querySelectorAll('[data-r42-tab]').forEach(v=>v.classList.toggle('active',v===b));draw(b.dataset.r42Tab)})}
 
-function hover42(ev,c,marker=ev.currentTarget){const x=airport42(c),sets=sets42(c),providers=provider42(c),t=document.getElementById('mapTooltip'),map=document.getElementById('interactiveMap');if(!t||!map)return;const city=x.city||x.location||x.airportName||c,airport=x.airportName||x.name||x.airport||'',status=x.status||'Active',mr=map.getBoundingClientRect(),er=marker.getBoundingClientRect();t.innerHTML=`<div class="r42-hover-head"><div><b>${esc42(c)} — ${esc42(city)}</b><small>${esc42(airport)}</small></div><span class="${String(status).toLowerCase()==='active'?'active':'inactive'}">${esc42(status)}</span></div><div class="r42-hover-grid"><div><small>Service</small><b>${sets.service.length}</b></div><div><small>Lounge</small><b>${sets.lounge.length}</b></div><div><small>Facility</small><b>${sets.facility.length}</b></div><div><small>System</small><b>${sets.system.length}</b></div></div>${providers.length?`<div class="r42-hover-provider">${esc42(providers[0])}${providers.length>1?` <span>+${providers.length-1}</span>`:''}</div>`:''}`;const tw=Math.min(330,Math.max(270,mr.width*.28));const center=er.left-mr.left+er.width/2;t.style.width=tw+'px';t.style.left=Math.min(mr.width-tw/2-12,Math.max(tw/2+12,center))+'px';const above=er.top-mr.top-t.offsetHeight-14;t.style.top=(above>12?above:Math.min(mr.height-t.offsetHeight-12,er.bottom-mr.top+14))+'px';t.classList.add('show','r42-tooltip')}
+function hover42(ev,c,marker=ev.currentTarget){
+ const x=airport42(c),sets=sets42(c),providers=provider42(c),t=document.getElementById('mapTooltip'),map=document.getElementById('interactiveMap');if(!t||!map||!marker)return;
+ const city=x.city||x.location||x.airportName||c,airport=x.airportName||x.name||x.airport||'',status=x.status||'Active';
+ const mr=map.getBoundingClientRect(),er=marker.getBoundingClientRect();
+ t.innerHTML=`<div class="r42-hover-head"><div><b>${esc42(c)} — ${esc42(city)}</b><small>${esc42(airport)}</small></div><span class="${String(status).toLowerCase()==='active'?'active':'inactive'}">${esc42(status)}</span></div><div class="r42-hover-grid"><div><small>Service</small><b>${sets.service.length}</b></div><div><small>Lounge</small><b>${sets.lounge.length}</b></div><div><small>Facility</small><b>${sets.facility.length}</b></div><div><small>System</small><b>${sets.system.length}</b></div></div>${providers.length?`<div class="r42-hover-provider">${esc42(providers[0])}${providers.length>1?` <span>+${providers.length-1}</span>`:''}</div>`:''}`;
+ const width=Math.min(330,Math.max(260,map.clientWidth*.28)),gap=16;
+ const ratioX=mr.width/Math.max(map.clientWidth,1),ratioY=mr.height/Math.max(map.clientHeight,1);
+ // Tooltip is absolutely positioned in the map, and its CSS translates X by -50%.
+ t.style.width=width+'px';t.classList.add('show','r42-tooltip');
+ const height=t.offsetHeight;
+ const markerW=er.width/ratioX,markerH=er.height/ratioY;
+ const cx=(er.left-mr.left)/ratioX+markerW/2,cy=(er.top-mr.top)/ratioY+markerH/2;
+ const side=cx+width+gap<map.clientWidth-12?'right':cx-width-gap>12?'left':'center';
+ let center=side==='right'?cx+gap+markerW/2+width/2:side==='left'?cx-gap-markerW/2-width/2:cx;
+ center=Math.max(width/2+12,Math.min(map.clientWidth-width/2-12,center));
+ let top=cy-height/2;
+ if(side==='center')top=cy-height-gap>12?cy-height-gap:cy+gap;
+ top=Math.max(12,Math.min(map.clientHeight-height-12,top));
+ // Never cover the selected marker, even near the edge.
+ if(Math.abs(center-cx)<width/2+markerW/2+gap && top<cy+markerH/2 && top+height>cy-markerH/2){
+  top=cy-height-gap>12?cy-height-gap:cy+gap;
+  top=Math.max(12,Math.min(map.clientHeight-height-12,top));
+ }
+ t.style.left=center+'px';t.style.top=top+'px';
+}
+
 function hide42(){const t=document.getElementById('mapTooltip');t?.classList.remove('show','r42-tooltip')}
 window.showAirportTooltip=hover42;window.hideAirportTooltip=hide42;
 window.geBindStationMapMarkers=function(layer){
@@ -10506,6 +10538,8 @@ window.geBindStationMapMarkers=function(layer){
  });
 };
 })();
+
+document.addEventListener('ge-dashboard-period-change',()=>{if(document.getElementById('initRows'))window.renderInitiatives?.()});
 
 /* Initiative hydration guard: render immediately and again when cached/background data arrives. */
 (function(){

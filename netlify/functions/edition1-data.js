@@ -197,7 +197,7 @@ async function writeOne(db,actor,collection,action,id,raw,{initiativeImport=fals
   if(isExternalActor(actor) && !['initiatives','projectEvents'].includes(collection)) throw Object.assign(new Error(`Write access denied for ${collection}.`),{statusCode:403,code:'FORBIDDEN'});
   if(action==='DELETE')return db.runTransaction(async transaction=>{
     const snap=await transaction.get(ref); if(!snap.exists) return {id:ref.id,deleted:false};
-    const prev=snap.data()||{}; if(collection==='touchpoints' && (String(prev.sourceType||'').trim().toLowerCase()!=='manual' || /(?:^|[^a-z])(nps|csi)(?:[^a-z]|$)/i.test([prev.source,prev.origin,prev.originSource].filter(Boolean).join(' ')))) throw Object.assign(new Error('Only manually created touch points may be deleted.'),{statusCode:403,code:'TOUCHPOINT_SOURCE_PROTECTED'}); if(isExternalActor(actor)&&!ownsRecord(actor,prev)) throw Object.assign(new Error('External users can only delete their own records.'),{statusCode:403,code:'OWNERSHIP_FORBIDDEN'}); if(!isExternalActor(actor)&&!inScope(actor,prev)) throw Object.assign(new Error('Record outside account scope.'),{statusCode:403,code:'SCOPE_FORBIDDEN'});
+    const prev=snap.data()||{}; if(collection==='touchpoints' && /(?:^|[^a-z])(nps|csi)(?:[^a-z]|$)/i.test([prev.sourceType,prev.source,prev.sourceLabel,prev.origin,prev.originSource].filter(Boolean).join(' '))) throw Object.assign(new Error('Corporate NPS/CSI touch points cannot be deleted.'),{statusCode:403,code:'TOUCHPOINT_SOURCE_PROTECTED'}); if(isExternalActor(actor)&&!ownsRecord(actor,prev)) throw Object.assign(new Error('External users can only delete their own records.'),{statusCode:403,code:'OWNERSHIP_FORBIDDEN'}); if(!isExternalActor(actor)&&!inScope(actor,prev)) throw Object.assign(new Error('Record outside account scope.'),{statusCode:403,code:'SCOPE_FORBIDDEN'});
     if(collection==='initiatives' && !isExternalActor(actor) && actor.role!=='Super Admin' && !isOperationalAdmin(actor)) throw Object.assign(new Error('Admin access required to delete initiatives.'),{statusCode:403,code:'HIERARCHY_FORBIDDEN'});
     transaction.delete(ref);
     transaction.set(db.collection('portalMetadata').doc('cacheState'),{version:FieldValue.increment(1),updatedAt:FieldValue.serverTimestamp(),lastCollection:collection},{merge:true});
@@ -248,7 +248,7 @@ async function writeOne(db,actor,collection,action,id,raw,{initiativeImport=fals
     }
   }
 
-  if(collection==='touchpoints'&&existing.exists&&['CSI','NPS','CSI_OCR','NPS_OCR','OCR_CSI','OCR_NPS'].includes(String(prev.sourceType||'').toUpperCase())&&String(data.name||'')!==String(prev.name||'')) throw Object.assign(new Error('CSI touch point name is immutable.'),{statusCode:403,code:'CSI_TOUCHPOINT_LOCKED'});
+  if(collection==='touchpoints'&&existing.exists&&/(?:^|[^a-z])(nps|csi)(?:[^a-z]|$)/i.test([prev.sourceType,prev.source,prev.sourceLabel,prev.origin,prev.originSource].filter(Boolean).join(' '))) throw Object.assign(new Error('Corporate NPS/CSI touch points cannot be edited.'),{statusCode:403,code:'CSI_TOUCHPOINT_LOCKED'});
   if(collection==='inbox'&&action==='CREATE')data.notificationStatus='Unread';
   if(isExternalActor(actor) && existing.exists && !ownsRecord(actor,prev)) throw Object.assign(new Error('External users can only update their own records.'),{statusCode:403,code:'OWNERSHIP_FORBIDDEN'});
   if(!isExternalActor(actor) && existing.exists && !inScope(actor,prev)) throw Object.assign(new Error('Record outside account scope.'),{statusCode:403,code:'SCOPE_FORBIDDEN'});

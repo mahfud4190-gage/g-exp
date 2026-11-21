@@ -8,12 +8,12 @@ function assertStyles(){
   const css=read('assets/global-ui-canonical.css');
   const legacy=read('assets/portal.css');
   assert.doesNotMatch(legacy,/\.ge-assess-tabs|\.ge-map-gallery|\.ge-ref-row-actions/);
-  const tabRule=css.match(/\.ge-assess-tabs>button\{([^}]+)\}/g);
+  const tabRule=css.match(/html body #cleanPageOutlet #r43Monitoring \.ge-assess-tabs > \.ge-assess-tab \{([^}]+)\}/g);
   assert.equal(tabRule?.length,1);
-  assert.match(tabRule[0],/font-size:var\(--ui-button-font\)/);
-  assert.match(tabRule[0],/font-weight:var\(--ui-button-weight\)/);
-  assert.match(tabRule[0],/border-radius:0/);
-  assert.match(tabRule[0],/border-block-end:2px solid transparent/);
+  assert.match(tabRule[0],/font-size: 13px/);
+  assert.match(tabRule[0],/font-weight: 500/);
+  assert.match(tabRule[0],/border-radius: 0/);
+  assert.match(tabRule[0],/border-bottom: 2px solid transparent/);
   assert.match(css,/\.ge-native-dialog\{[^}]+max-block-size:calc\(100dvh - 32px\)/);
   assert.match(css,/\.ge-checklist-share-body\{[^}]+overflow:auto/);
   assert.match(css,/\.ge-checklist-share-result:not\(\[hidden\]\)\{display:grid/);
@@ -63,17 +63,17 @@ function assertMonitoringViews(){
   const window={gxCanManage:()=>true,GEStore:{get:()=>model}};
   vm.runInNewContext(read('assets/form-management.js'),{window,document});
   const click=async dataset=>{
-    const target={dataset,closest:selector=>selector==='button'?target:null};
+    const target={dataset,closest:selector=>selector.startsWith('button')?target:null,matches:()=>false};
     for(const listener of listeners)await listener({target});
   };
   return (async()=>{
     for(const view of ['overview','templates','works','submissions']){
       await click({tab:view});
-      assert.match(root.innerHTML,new RegExp('class="ge-assess-tab active" aria-current="page" data-tab="'+view+'"'));
+      assert.match(root.innerHTML,new RegExp('class="ge-assess-tab active" aria-selected="true" data-tab="'+view+'"'));
     }
     await click({action:'assign'});
     assert.match(root.innerHTML,/Assign form to work/);
-    assert.match(root.innerHTML,/class="ge-assess-tab active" aria-current="page" data-tab="works"/);
+    assert.match(root.innerHTML,/class="ge-assess-tab active" aria-selected="true" data-tab="works"/);
     await click({share:'fixture-work'});
     assert.equal(dialog.open,true);
     assert.equal(dialog.className,'ge-native-dialog');
