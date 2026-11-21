@@ -2192,25 +2192,37 @@ function renderAdminInbox(){
  const t=document.getElementById('adminInboxRows');if(!t)return;
  const filter=document.getElementById('inboxTypeFilter');if(filter){const current=filter.value;filter.innerHTML='<option value="">Semua Jenis</option>'+[...new Set((data.inbox||[]).map(x=>x.type).filter(Boolean))].sort().map(v=>`<option value="${geEsc(v)}">${geEsc(v)}</option>`).join('');filter.value=current}
  t.innerHTML=inboxFiltered().map((x,i)=>`<tr class="${x.status==='Unread'?'unread-row':''}" data-inbox-id="${geEsc(x.id)}" style="cursor:pointer">
- <td>${i+1}</td><td>${geDateTime(x.createdAt)}</td><td><span class="inbox-type">${geEsc(x.type||'-')}</span></td>
+ <td>${i+1}</td><td>${geDateTime(x.createdAt||x.timestamp||x.at||x.date)}</td><td><span class="inbox-type">${geEsc(x.type||'-')}</span></td>
  <td><b>${geEsc(x.senderName||x.from||'-')}</b><small>${geEsc(x.senderRole||'')}</small></td><td>${geEsc(x.senderArea||x.area||'-')}</td><td>${geEsc(x.subject||x.title||'-')}</td>
  <td><span class="pill">${geEsc(x.status||'Unread')}</span></td><td class="inbox-actions">
  <button class="ge-btn secondary compact-btn" data-inbox-open="${geEsc(x.id)}">Buka</button>
  ${x.type==='Article Proposal'&&x.status!=='Handled'?`<button class="ge-btn compact-btn" data-inbox-review="${geEsc(x.id)}">Review</button>`:''}
  <button class="ge-btn danger compact-btn" data-inbox-delete="${geEsc(x.id)}">Delete</button>
  </td></tr>`).join('')||'<tr><td colspan="8">Belum ada pesan sesuai filter.</td></tr>';
- if(!t.dataset.bound){t.dataset.bound='1';t.addEventListener('click',e=>{const row=e.target.closest('[data-inbox-id]');if(!row)return;const id=row.dataset.inboxId;if(e.target.closest('[data-inbox-delete]'))deleteInbox(id);else if(e.target.closest('[data-inbox-review]'))reviewProposal(id);else openInboxDetail(id)})}
+ if(!window.__geInboxActionsBound){
+   window.__geInboxActionsBound=true;
+   document.addEventListener('click',e=>{
+     const action=e.target.closest('[data-inbox-open],[data-inbox-delete],[data-inbox-review]');
+     if(!action||!action.closest('#adminInboxRows'))return;
+     const id=action.closest('[data-inbox-id]')?.dataset.inboxId;
+     if(!id)return;
+     e.preventDefault();e.stopPropagation();
+     if(action.matches('[data-inbox-delete]'))void deleteInbox(id);
+     else if(action.matches('[data-inbox-review]'))reviewProposal(id);
+     else void openInboxDetail(id);
+   });
+ }
  if(typeof geEnhanceAllTables==='function')setTimeout(geEnhanceAllTables,0);renderAdminOverview();
 }
 function findInbox(id){return(data.inbox||[]).find(v=>String(v.id)===String(id))}
 async function openInboxDetail(id){
  const x=findInbox(id);if(!x)return;
- if(x.status==='Unread'){try{await window.GEStore.markInboxRead(x.id,'inbox');window.dispatchEvent(new Event('gx-inbox-ready'))}catch(e){console.warn('[Inbox read]',e);const target=document.getElementById('adminInboxRows');if(target){const row=target.querySelector(`[data-inbox-id="${String(id).replace(/[^\w:.-]/g,'')}"]`);if(row)row.title='Status baca belum tersimpan: '+(e.message||e)}return}}
+ const shouldMarkRead=x.status==='Unread';
  const body=document.getElementById('inboxDetailBody');if(!body)return;
  const related=x.referenceId||x.relatedId||x.articleId;
  const support=x.relatedType==='contactMessages'||x.type==='Contact Support';
  body.innerHTML=`<div class="inbox-detail-head"><span class="inbox-type">${geEsc(x.type||'-')}</span><h2>${geEsc(x.subject||x.title||'-')}</h2>
- <p>Dari <b>${geEsc(x.senderName||x.from||'-')}</b> • ${geEsc(x.senderArea||x.area||'-')} • ${geDateTime(x.createdAt)}</p></div>
+ <p>Dari <b>${geEsc(x.senderName||x.from||'-')}</b> • ${geEsc(x.senderArea||x.area||'-')} • ${geDateTime(x.createdAt||x.timestamp||x.at||x.date)}</p></div>
  <div class="inbox-body-content">${x.type==='Article Proposal'?geSanitizeHTML(x.body||''):`<p>${geEsc(x.body||x.message||'').replace(/\n/g,'<br>')}</p>`}</div>
  ${!support&&!['Task Assignment','System Notification'].includes(x.type)&&x.senderId&&x.recipientId?`<section class="ge-inbox-thread"><h3>Percakapan</h3><div id="inboxThreadHistory">Memuat percakapan…</div><label>Balasan<textarea id="inboxReplyText" rows="3" placeholder="Tulis balasan"></textarea></label><button type="button" class="ge-btn" id="inboxReplySend">Kirim Balasan</button><p id="inboxReplyStatus" role="status"></p></section>`:''}
  <div class="modal-actions">${support&&related?`<button class="ge-btn" id="inboxSupportOpen">Buka Percakapan</button>`:''}${x.type==='Article Proposal'&&x.status!=='Handled'?`<button class="ge-btn" id="inboxReviewOpen">Review Artikel</button>`:''}${x.type==='Task Assignment'&&related?`<button class="ge-btn" id="inboxTaskOpen">Lihat Task</button>`:''}<button class="ge-btn secondary" id="inboxCloseButton">Close</button></div>`;
@@ -2219,14 +2231,36 @@ async function openInboxDetail(id){
  body.querySelector('#inboxReviewOpen')?.addEventListener('click',()=>{closeInboxDetail();reviewProposal(id)});
  body.querySelector('#inboxTaskOpen')?.addEventListener('click',()=>location.assign(`app.html?page=inisiatif&initiative=${encodeURIComponent(related)}`));
  body.querySelector('#inboxCloseButton')?.addEventListener('click',closeInboxDetail);
- document.getElementById('inboxDetailModal').classList.add('show');renderAdminInbox();
+ const dialog=document.getElementById('inboxDetailModal');
+ if(!dialog)return;
+ dialog.classList.add('show');
+ if(shouldMarkRead){
+   try{
+     await window.GEStore.markInboxRead(x.id,'inbox');
+     x.status='Read';renderAdminInbox();window.dispatchEvent(new Event('gx-inbox-ready'));
+   }catch(e){console.warn('[Inbox read]',e);const feedback=dialog.querySelector('.inbox-detail-head');if(feedback){const note=document.createElement('p');note.textContent='Pesan terbuka, tetapi status baca belum tersimpan: '+(e.message||e);feedback.appendChild(note)}}
+ }
 }
 function closeInboxDetail(){document.getElementById('inboxDetailModal')?.classList.remove('show')}
 function markInboxHandled(id){const x=findInbox(id);if(x){x.status='Handled';save();renderAdminInbox()}}
 async function deleteInbox(id){if(confirm('Hapus pesan ini?')){if(!await geDeleteFirestoreRecord('inbox',id))return;renderAdminInbox()}}
 
 /* ---------- Audit ---------- */
-function geDateTime(v){try{return new Date(v).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'})}catch(e){return v||'-'}}
+function geDateTime(v){
+ try{
+   if(v==null||v==='')return '—';
+   let value=v;
+   if(typeof v==='object'){
+     if(typeof v.toDate==='function')value=v.toDate();
+     else if(Number.isFinite(Number(v.seconds??v._seconds)))value=new Date(Number(v.seconds??v._seconds)*1000+Math.floor(Number(v.nanoseconds??v._nanoseconds??0)/1e6));
+     else if(v.iso)value=v.iso;
+   }else if(typeof v==='number'||(/^\d{10,13}$/.test(String(v)))){
+     const n=Number(v);value=n<1e11?n*1000:n;
+   }
+   const date=value instanceof Date?value:new Date(value);
+   return Number.isFinite(date.getTime())?date.toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'}):'—';
+ }catch{return '—'}
+}
 function auditFiltered(){
  const q=(document.getElementById('auditSearch')?.value||'').toLowerCase(),act=document.getElementById('auditActionFilter')?.value||'',
  mod=document.getElementById('auditModuleFilter')?.value||'',date=document.getElementById('auditDateFilter')?.value||'';
