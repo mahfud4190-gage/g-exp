@@ -1,100 +1,24 @@
 'use strict';
-
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
-const read = file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
-
-function testStylesheetOrder() {
-  const app = read('app.html');
-  assert.match(app, /<link id="geCanonicalUiStyle" rel="stylesheet" href="assets\/global-ui-canonical\.css">/);
-  assert.doesNotMatch(app, /appendChild\(canonicalUi\)/);
-  const base = {href: 'https://gage.test/assets/portal.css'};
-  const canonical = {href: 'https://gage.test/assets/global-ui-canonical.css', before(link) {
-    links.splice(links.indexOf(this), 0, link);
-  }};
-  const links = [base, canonical];
-  const document = {
-    querySelectorAll() { return links; },
-    getElementById(id) { assert.equal(id, 'geCanonicalUiStyle'); return canonical; },
-    createElement(tag) { assert.equal(tag, 'link'); return {}; }
-  };
-  const source = app.slice(app.indexOf(' function ensureStyle('), app.indexOf(' const runtimeGlobals='));
-  const ensureStyle = vm.runInNewContext(source + '\nensureStyle', {document});
-  ensureStyle('assets/portal.css');
-  ensureStyle('assets/edition1-pages.css');
-  ensureStyle('assets/checklist-share.css');
-  ensureStyle('assets/edition1-pages.css');
-  assert.deepEqual(links.map(link => link.href), [
-    base.href, 'assets/edition1-pages.css', 'assets/checklist-share.css', canonical.href
-  ]);
-  assert.equal(links.at(-1), canonical, 'Keep the original canonical stylesheet attached');
-}
-
-async function run() {
-  testStylesheetOrder();
-  const scripts = [];
-  const document = {
-    scripts,
-    body: { appendChild(script) { scripts.push(script); } },
-    createElement() {
-      return {
-        getAttribute(name) { return this[name]; },
-        remove() { scripts.splice(scripts.indexOf(this), 1); }
-      };
-    }
-  };
-  const window = {addEventListener() {}};
-  const context = vm.createContext({window, document, setTimeout, clearTimeout});
-  const app = read('app.html');
-  const loader = app.slice(app.indexOf('const runtimeGlobals='), app.indexOf("if(['cx-import'"));
-  const loadSrc = vm.runInContext(loader + '\nloadSrc', context);
-
-  const loadingStore = loadSrc('assets/edition1-store.js');
-  vm.runInContext(read('assets/edition1-store.js'), context);
-  scripts.at(-1).onload();
-  await loadingStore;
-  const firestoreStore = window.GEStore;
-  assert.equal(typeof firestoreStore.waitAuth, 'function');
-  assert.equal(typeof firestoreStore.deleteRecord, 'function');
-
-  // Airport Experience can load a legacy data script after the Firestore store.
-  vm.runInContext(read('assets/data.js'), context);
-  assert.equal(window.GEStore, firestoreStore);
-  // A previously overwritten global must also recover without resetting state.
-  window.GEStore = {get() {}};
-  await loadSrc('assets/edition1-store.js');
-  assert.equal(window.GEStore, firestoreStore);
-  assert.equal(scripts.length, 1);
-
-  assert.equal(window.GEFiles.loadOnDemand, true);
-  assert(!scripts.some(script => script.src === 'assets/edition1-files.js'));
-  const loadingFiles = window.GEFiles.get('fixture');
-  scripts.at(-1).onerror();
-  await assert.rejects(loadingFiles, /Gagal memuat assets\/edition1-files\.js/);
-  const retryFiles = loadSrc('assets/edition1-files.js');
-  vm.runInContext(read('assets/edition1-files.js'), context);
-  scripts.at(-1).onload();
-  await retryFiles;
-  const firebaseFiles = window.GEFiles;
-  vm.runInContext(read('assets/files.js'), context);
-  assert.equal(window.GEFiles, firebaseFiles);
-  window.GEFiles = {get() {}};
-  await loadSrc('assets/edition1-files.js');
-  assert.equal(window.GEFiles, firebaseFiles);
-
-  const missingPlanning = loadSrc('assets/planning-domains.js', true);
-  scripts.at(-1).onerror();
-  await assert.rejects(missingPlanning, /Gagal memuat assets\/planning-domains\.js/);
-  const retryPlanning = loadSrc('assets/planning-domains.js', true);
-  assert.match(scripts.at(-1).src, /^assets\/planning-domains\.js\?route=/);
-  scripts.at(-1).onload();
-  await retryPlanning;
-  console.log('RUNTIME_LOADER_RECOVERY_CONTRACT_PASS');
-}
-
-run().catch(error => {
-  console.error(error);
-  process.exitCode = 1;
-});
+const fs=require('node:fs');
+const vm=require('node:vm');
+const assert=require('node:assert/strict');
+const app=fs.readFileSync('app.html','utf8');
+const start=app.indexOf('function loadSrc('),end=app.indexOf("if(['cx-import'",start);
+assert(start!==-1&&end>start,'App must expose runtime loader.');
+const scripts=[],timers=[];
+const document={scripts,body:{appendChild(script){scripts.push(script)}},createElement(){const script={src:'',remove(){const i=scripts.indexOf(script);if(i>=0)scripts.splice(i,1)} };return script}};
+const scope={window:{},document,setTimeout:(fn,ms)=>{const t={fn,ms};timers.push(t);return t},clearTimeout:()=>{},Promise,Error,Date};
+const loadSrc=vm.runInNewContext(app.slice(start,end)+'\nloadSrc',scope);
+(async()=>{
+ const p1=loadSrc('assets/a.js');assert.equal(scripts.length,1);
+ assert.strictEqual(loadSrc('assets/a.js'),p1,'Concurrent requests must share pending load.');
+ scripts[0].onerror();await assert.rejects(p1,/Gagal memuat/);
+ assert.equal(scripts.length,0,'Failed script must be removed.');
+ const p2=loadSrc('assets/a.js');assert.equal(scripts.length,1,'Failed load must be retryable.');
+ scripts[0].onload();await p2;
+ await loadSrc('assets/a.js');assert.equal(scripts.length,1,'Successful load must be reused.');
+ const p3=loadSrc('assets/slow.js');assert.equal(scripts.length,2);
+ const timer=timers[timers.length-1];assert.equal(timer.ms,20000);timer.fn();await assert.rejects(p3,/Timeout/);
+ const p4=loadSrc('assets/slow.js');assert.equal(scripts.length,2,'Timeout must not poison future loads.');scripts[1].onload();await p4;
+ console.log('RUNTIME_LOADER_RECOVERY_CONTRACT_PASS');
+})().catch(e=>{console.error(e);process.exitCode=1});

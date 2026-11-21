@@ -1,143 +1,76 @@
 <!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ground Experience Portal</title>
-<style>html,body{background:#f4f7fb}#cleanPageOutlet{overflow-anchor:none}</style>
-<link rel="stylesheet" href="assets/portal.css"><link rel="stylesheet" href="assets/clean-shell.css"><link id="geCanonicalUiStyle" rel="stylesheet" href="assets/global-ui-canonical.css">
-<script>try{document.documentElement.classList.add('ge-portal-density');if((localStorage.getItem('GE_SIDEBAR_COLLAPSED') ?? localStorage.getItem('GE_V257_SIDEBAR_COLLAPSED'))==='1')document.documentElement.classList.add('ge-precollapsed')}catch(e){}</script><script src="assets/portal-shell.js"></script><script src="assets/firebase-config.js"></script><script src="assets/firebase-client.js"></script><script src="assets/auth.js"></script><script src="assets/clean-page-registry.js"></script></head><body id="top" class="e1-page"><header class="top"></header><div class="shell"><aside class="side"></aside><main class="main" id="cleanPageOutlet" aria-busy="true"></main><div id="geRouteLoading" class="clean-page-loading" role="status" aria-live="polite">Memuat halaman…</div></div><footer class="footer"><b>GROUND EXPERIENCE — GARUDA INDONESIA</b><br>Portal Service Experience</footer><button aria-label="Kembali ke atas" class="back-to-top" id="backToTop">↑</button>
-<script src="assets/edition1-overlay-manager.js"></script><script src="assets/overlay.js"></script><script src="assets/edition1-page-boot.js"></script><script src="assets/clean-route-adapter.js"></script><script src="assets/table-runtime.js"></script><script src="assets/portal-ui-runtime.js"></script><script src="assets/cache-runtime.js"></script><script>
+<style>html,body{background:#f4f7fb}#cleanPageOutlet{overflow-anchor:none}.clean-page-loading{display:none}</style>
+<link rel="stylesheet" href="assets/portal.css"><link rel="stylesheet" href="assets/clean-shell.css"><link rel="stylesheet" href="assets/global-ui-canonical.css">
+<script>try{document.documentElement.classList.add('ge-portal-density');if((localStorage.getItem('GE_SIDEBAR_COLLAPSED') ?? localStorage.getItem('GE_V257_SIDEBAR_COLLAPSED'))==='1')document.documentElement.classList.add('ge-precollapsed')}catch(e){}</script><script src="assets/portal-shell.js"></script><script src="assets/firebase-config.js"></script><script src="assets/firebase-client.js"></script><script src="assets/auth.js"></script><script src="assets/clean-page-registry.js"></script></head><body id="top" class="e1-page"><header class="top"></header><div class="shell"><aside class="side"></aside><main class="main" id="cleanPageOutlet"><div class="clean-page-loading" aria-hidden="true"></div></main></div><footer class="footer"><b>GROUND EXPERIENCE — GARUDA INDONESIA</b><br>Portal Service Experience</footer><button aria-label="Kembali ke atas" class="back-to-top" id="backToTop">↑</button>
+<script src="assets/edition1-overlay-manager.js"></script><script src="assets/clean-route-adapter.js"></script><script src="assets/table-runtime.js"></script><script src="assets/portal-ui-runtime.js"></script><script src="assets/cache-runtime.js"></script><script>
 (function(){
  const outlet=document.getElementById('cleanPageOutlet');
+ let routeSequence=0;
  const planningRoutes=new Set(['planning-workspace','service-provider','lounge-list','space-building','station-resources','airport-systems-planning','planning-documents-hub','planning-standards','airport-cost-structure']);
  function routeUrl(target){try{return new URL(target||location.href,location.href)}catch{return new URL(location.href)}}
  function resolveRoute(url){const params=url.searchParams;let route=String(params.get('page')||'index').trim().toLowerCase();if(route==='app')route='index';const alias=(window.GE_ROUTE_ALIASES||{})[route];if(alias){const parts=String(alias).split('?');route=parts[0];if(parts[1])new URLSearchParams(parts[1]).forEach((v,k)=>{if(!params.has(k))params.set(k,v)});}params.set('page',route);return {route,params,url};}
- function ensureStyle(href){
-  if([...document.querySelectorAll('link[rel="stylesheet"]')].some(link=>link.href&&link.href.includes(href.split('?')[0])))return;
-  const link=document.createElement('link');
-  link.rel='stylesheet';
-  link.href=href;
-  document.getElementById('geCanonicalUiStyle').before(link);
- }
- const runtimeGlobals={
-  'assets/edition1-store.js':{name:'GEStore',method:'waitAuth'},
-  'assets/edition1-files.js':{name:'GEFiles',source:'Firebase Storage'}
- };
+ function ensureStyle(href){if([...document.querySelectorAll('link[rel="stylesheet"]')].some(x=>x.href&&x.href.includes(href.split('?')[0])))return;const l=document.createElement('link');l.rel='stylesheet';l.href=href;document.head.appendChild(l);}
  function loadSrc(src,force=false){
   const loaded=window.__geLoadedScripts||(window.__geLoadedScripts=new Map());
   if(src.includes('assets/master-reference.js'))src='assets/master-reference.js';
   if(src.includes('assets/dashboard-firestore.js'))src='assets/dashboard-firestore.js';
   const pathname=src.split('?')[0];
-  const runtime=runtimeGlobals[pathname];
-  const isReady=value=>runtime.method?typeof value?.[runtime.method]==='function':value?.source===runtime.source&&!value.loadOnDemand;
-
   if(!force){
-   if(loaded.has(pathname))return loaded.get(pathname).then(value=>{if(runtime)window[runtime.name]=value;});
-   if(runtime&&isReady(window[runtime.name]))return Promise.resolve();
-   const existing=[...document.scripts].find(script=>script.getAttribute('src')?.split('?')[0]===pathname);
-   if(existing&&!runtime)return Promise.resolve();
+   if(loaded.has(pathname))return loaded.get(pathname);
+   const existing=[...document.scripts].find(x=>x.src&&x.src.includes(pathname)&&x.__geLoaded===true);
+   if(existing)return Promise.resolve();
   }
-
   const promise=new Promise((resolve,reject)=>{
    const script=document.createElement('script');
    const timeoutMs=pathname.includes('edition1-business-runtime.js')?45000:20000;
    let done=false;
    const finish=err=>{
-    if(done)return;
-    done=true;
-    clearTimeout(timer);
-    if(err){script.remove();reject(err);}
-    else {if(force)script.remove();resolve(runtime?window[runtime.name]:undefined);}
+    if(done)return;done=true;clearTimeout(timer);
+    if(err){script.remove();if(!force)loaded.delete(pathname);reject(err)}
+    else{script.__geLoaded=true;resolve()}
    };
    const timer=setTimeout(()=>finish(new Error(`Timeout setelah ${timeoutMs/1000} detik memuat ${src}.`)),timeoutMs);
    script.src=force?pathname+'?route='+Date.now():src;
-   script.onload=()=>finish(runtime&&!isReady(window[runtime.name])?new Error('Runtime tidak siap setelah memuat '+src):null);
+   script.onload=()=>finish();
    script.onerror=()=>finish(new Error('Gagal memuat '+src));
    document.body.appendChild(script);
   });
-  if(!force){
-   loaded.set(pathname,promise);
-   promise.catch(()=>{if(loaded.get(pathname)===promise)loaded.delete(pathname);});
-  }
+  if(!force)loaded.set(pathname,promise);
   return promise;
  }
- const lazyFiles={source:'Firebase Storage',loadOnDemand:true};
- for(const method of ['put','get','del','download']){
-  lazyFiles[method]=async (...args)=>{
-   await loadSrc('assets/edition1-files.js');
-   return window.GEFiles[method](...args);
-  };
- }
- window.GEFiles=lazyFiles;
- window.geLoadImportTools=()=>loadSrc('assets/edition1-business-runtime.js');
  if(['cx-import'].includes('__loader_contract__')){}
- const loading=document.getElementById('geRouteLoading');
- let navigationId=0;
  async function renderRoute(target,opts={}){
-  const id=++navigationId;
-  window.geCancelEdition1PageBoot?.();
-  const isCurrent=()=>id===navigationId;
-  const initial=!!opts.initial;const historyMode=opts.historyMode||'push';const parsed=resolveRoute(routeUrl(target));const route=parsed.route,params=parsed.params;const isSharedChecklist=['monitoring-assessment','monitoring-checklist'].includes(route)&&!!params.get('share');
+  const initial=!!opts.initial;const historyMode=opts.historyMode||'push';const parsed=resolveRoute(routeUrl(target));const route=parsed.route,params=parsed.params;const requestSequence=++routeSequence;const isCurrent=()=>requestSequence===routeSequence;let stage='Halaman';const isSharedChecklist=['monitoring-assessment','monitoring-checklist'].includes(route)&&!!params.get('share');
   if(isSharedChecklist){ensureStyle('assets/checklist-share.css');document.body.classList.add('ge-shared-public-route');document.querySelector('.top')?.remove();document.querySelector('.side')?.remove();document.querySelector('.footer')?.remove();document.querySelector('.back-to-top')?.remove();document.querySelector('.shell')?.classList.add('ge-shared-public-shell');}
-  loading.textContent='Memuat '+(window.GE_PAGE_REGISTRY?.[route]?.title||'halaman')+'…';
-  loading.hidden=false;
-  outlet.setAttribute('aria-busy','true');
-  let stage='Autentikasi';
   try{
    if(!isSharedChecklist){if(!window.GX_AUTH_READY)throw new Error('Authentication bootstrap tidak tersedia.');await window.GX_AUTH_READY;if(!isCurrent()||!window.gxGetSession?.())return;}
-   if(!initial){outlet.style.minHeight=Math.max(outlet.offsetHeight,240)+'px';try{window.gePlanningDomainDispose?.()}catch(e){}window.geDisposeRouteOverlays?.();}
+   if(!initial){outlet.setAttribute('aria-busy','true');outlet.style.minHeight=Math.max(outlet.offsetHeight,240)+'px';try{window.gePlanningDomainDispose?.()}catch(e){}}
    if(historyMode!=='none'){const href='app.html?'+params.toString();history[historyMode==='replace'?'replaceState':'pushState'](null,'',href);}
    if(route==='attention-settings'&&!window.gxHasPermission?.('attention-settings'))throw new Error('Akses tidak tersedia.');
    if(['portal-management','audit-log'].includes(route)&&window.gxGetSession?.()?.role!=='Super Admin')throw new Error('Akses khusus Super Admin.');
-   stage='Modul halaman';
    const def=window.GE_PAGE_REGISTRY?.[route];if(!def)throw new Error('Page tidak ditemukan: '+route);
    document.title=def.title+' — Ground Experience Portal';outlet.innerHTML=def.html;
    if(route==='admin'&&window.gxGetSession?.()?.role!=='Super Admin'){outlet.querySelectorAll('.admin-section-tab').forEach(b=>{if(/Activity Log|Portal Management/.test(b.textContent))b.remove()});outlet.querySelector('#adminSectionAudit')?.remove();outlet.querySelector('#adminSectionPortal')?.remove();}
    for(const href of def.styles||[])ensureStyle(href);
-   if(!isSharedChecklist){await loadSrc('assets/edition1-store.js');if(!isCurrent())return;}
-   if(['cx-import','customer-experience'].includes(route)){await loadSrc('assets/edition1-store.js');if(!isCurrent())return;await window.GEStore.hydrate(['customerExperience']);if(!isCurrent())return;}
-   for(const item of def.scripts||[]){if(item.src==='assets/edition1-files.js')continue;if(item.src){await loadSrc(item.src,planningRoutes.has(route)&&item.src.includes('planning-domains.js'));if(!isCurrent())return;}else if(item.code){(0,eval)(item.code);}}
-   stage='Data halaman';
-   loading.textContent='Memuat data '+def.title+'…';
-   if(planningRoutes.has(route))await window.geInitPlanningDomain?.();
-   if(route==='asset-facility')await window.GXAssetFacilityP39?.init();
-   if(!isCurrent())return;
+   const canonicalUi=[...document.querySelectorAll('link[rel="stylesheet"]')].find(x=>x.href&&x.href.includes('/assets/global-ui-canonical.css'));if(canonicalUi)document.head.appendChild(canonicalUi);
+   if(['cx-import','customer-experience'].includes(route)){await loadSrc('assets/edition1-store.js');await window.GEStore.hydrate(['customerExperience']);}
+   for(const item of def.scripts||[]){if(item.src){await loadSrc(item.src,planningRoutes.has(route)&&item.src.includes('planning-domains.js'));}else if(item.code){(0,eval)(item.code);}}
    if(typeof window.geEdition1PageBoot==='function')await window.geEdition1PageBoot(route);
-   if(!isCurrent())return;
    if(route==='index'&&typeof window.geDashboardFirestoreBoot==='function')await window.geDashboardFirestoreBoot();
-   if(!isCurrent())return;
-   if(['station-360','service-experience','capability-classification'].includes(route)){await loadSrc('assets/edition1-store.js');if(!isCurrent())return;try{await window.GEStore?.hydrate(['monitoringTemplates','monitoringAssessments','formTemplates','formSubmissions','airports','serviceAlignments','facilities','assets','airportSystems','lounges','personnel','touchpoints','customerExperience']);}catch(e){console.warn('[Airport Experience source]',e)}}
-   if(!isCurrent())return;
+   if(['station-360','service-experience','capability-classification'].includes(route)){await loadSrc('assets/edition1-store.js');try{await window.GEStore?.hydrate(['monitoringTemplates','monitoringAssessments','formTemplates','formSubmissions','airports','serviceAlignments','facilities','assets','airportSystems','lounges','personnel','touchpoints','customerExperience']);}catch(e){console.warn('[Airport Experience source]',e)}}
    if(!isSharedChecklist&&['airport-experience','station-360','service-experience','capability-classification','monitoring-assessment'].includes(route))await loadSrc('assets/airport-experience-foundation.js');
-   if(!isCurrent())return;
-   if(['monitoring-assessment','monitoring-checklist'].includes(route)){await loadSrc('assets/form-management.js');if(!isCurrent())return;await window.geFormManagementInit?.();}
-   if(!isCurrent())return;
+   if(['monitoring-assessment','monitoring-checklist'].includes(route)){await loadSrc('assets/form-management.js');await window.geFormManagementInit?.();}
+   if(['inisiatif','calendar','monitoring-assessment','service-experience','capability-classification'].includes(route)&&window.gxCanManage?.()){await loadSrc('assets/edition1-store.js');await loadSrc('assets/master-reference.js');try{await window.GXMasterReference?.syncCatalog()}catch(e){console.warn('[Ground Touch Point sync]',e)}}
    if(route==='master-data')await window.GXMasterReference?.init();
    if(route==='attention-settings'){await loadSrc('assets/attention-settings.js');await window.geAttentionSettingsInit?.();}
-   if(!isCurrent())return;
-   await loadSrc('assets/portal-favicon.js');if(!isCurrent())return;window.gePortalFaviconInit?.();
-   if(!isSharedChecklist&&window.geInitR43&&['airport-experience','station-360','service-experience','capability-classification','monitoring-assessment'].includes(route))window.geInitR43();
+   await loadSrc('assets/portal-favicon.js');window.gePortalFaviconInit?.();
+   if(!isSharedChecklist&&window.geInitR43&&['airport-experience','station-360','service-experience','capability-classification','monitoring-assessment'].includes(route))setTimeout(window.geInitR43,0);
    window.gePortalRefreshShellState?.();window.gePortalApplyStandards?.();
    if(!initial&&!params.get('focus'))window.scrollTo({top:0,left:0,behavior:'auto'});
    if(route==='airport-experience'&&params.get('focus')==='map')setTimeout(()=>outlet.querySelector('#interactiveMap')?.scrollIntoView({block:'start'}),60);
 
-  }catch(err){
-   if(!isCurrent())return;
-   console.error('[Portal route]',err);
-   const panel=document.createElement('div');
-   panel.className='clean-page-error';
-   panel.setAttribute('role','alert');
-   panel.textContent=stage+' gagal dimuat. '+String(err.message||err);
-   const retry=document.createElement('button');
-   retry.type='button';
-   retry.className='ge-btn';
-   retry.textContent='Coba lagi';
-   retry.onclick=()=>renderRoute(location.href,{historyMode:'none'});
-   panel.append(' ',retry);
-   outlet.replaceChildren(panel);
-  }finally{
-   if(isCurrent()){
-    loading.hidden=true;
-    outlet.removeAttribute('aria-busy');
-    requestAnimationFrame(()=>{if(isCurrent())outlet.style.minHeight='';});
-   }
-  }
+  }catch(err){console.error('[Portal route]',err);if(isCurrent()){const message=stage+' gagal dimuat. '+String(err.message||err);outlet.innerHTML='<div class="clean-page-error"><b>Runtime halaman gagal dimuat.</b><p data-route-error></p><button type="button" data-route-retry>Coba lagi</button></div>';outlet.querySelector('[data-route-error]').textContent=message;outlet.querySelector('[data-route-retry]').onclick=()=>renderRoute(location.href,{historyMode:'none'});}}
+  finally{if(isCurrent()){outlet.removeAttribute('aria-busy');requestAnimationFrame(()=>{if(isCurrent())outlet.style.minHeight='';});}}
  }
  window.gePortalNavigate=(target)=>renderRoute(window.p40CleanRoute?window.p40CleanRoute(target):target,{historyMode:'push'});
  window.addEventListener('popstate',()=>renderRoute(location.href,{historyMode:'none'}));
