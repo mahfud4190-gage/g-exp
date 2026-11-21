@@ -43,17 +43,17 @@
   }
   async function token(forceRefresh=false){
     const u=await window.GXFirebase?.currentUser?.();
-    if(!u) throw new Error('Authentication required.');
+    if(!u)throw Object.assign(new Error('Authentication required.'),{status:401,code:'AUTH_REQUIRED'});
     return u.getIdToken(!!forceRefresh);
   }
-  async function apiGet(keys){
+  async function apiGet(keys,{serverOnly=false}={}){
     const list=[...new Set(keys.map(collKey))];
     const t=await token();
     const r=await fetchWithTimeout('/api/edition1-data?collections='+encodeURIComponent(list.join(',')),{headers:{Authorization:'Bearer '+t},cache:'no-store'});
     const p=await r.json().catch(()=>({}));
     if(r.ok)return p.collections||{};
     const msg=String(p.message||'');
-    if(!/Firebase Admin credentials are not configured/i.test(msg))throw new Error(msg||`Data request failed (${r.status}).`);
+    if(!/Firebase Admin credentials are not configured/i.test(msg))throw Object.assign(new Error(msg||`Data request failed (${r.status}).`),{status:r.status,code:p.code});
     // Netlify server-side Admin credentials are not available in some deployed environments.
     // Keep Firestore as the same source of truth by reading the canonical portalData tree
     // with the already-authenticated Firebase Web SDK and Firestore Security Rules.
@@ -68,7 +68,7 @@
         const snap=await fb.db.collection('users').get();
         out[key]=snap.docs.map(d=>({id:d.id,...d.data()}));
       }else{
-        const snap=await fb.db.collection('portalData').doc(key).collection('records').get();
+        const snap=await fb.db.collection('portalData').doc(key).collection('records').get(serverOnly?{source:'server'}:undefined);
         out[key]=snap.docs.map(d=>({id:d.id,...d.data()}));
       }
     }
@@ -90,7 +90,7 @@
       t=await token(true);
       r=await fetchWithTimeout('/api/edition1-data',{method:'POST',headers:{Authorization:'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify(body)});
     }
-    const p=await r.json().catch(()=>({})); if(!r.ok)throw new Error(p.message||`Save request failed (${r.status}).`); return p.result;
+    const p=await r.json().catch(()=>({})); if(!r.ok)throw Object.assign(new Error(p.message||`Save request failed (${r.status}).`),{code:p.code,status:r.status}); return p.result;
   }
   async function apiPostBatch(collection,changes){
     if(!changes.length)return [];
@@ -143,6 +143,89 @@
     }
     const previous=pending.catch(()=>undefined); pending=previous.then(()=>persistSnapshot(snapshot,queuedDeletions)).catch(err=>{console.error('[Edition1 Firebase Store]',err);window.dispatchEvent(new CustomEvent('gx-data-save-error',{detail:err}));throw err});
     return next;
+  }
+  function saveRecord(key,action,id,record){
+    const recordId=String(id??'').trim();
+    if(!recordId||!Array.isArray(state[key])||!['CREATE','UPDATE'].includes(action))
+      return Promise.reject(new Error('Data untuk disimpan tidak valid.'));
+    localRevision++;
+    const task=pending.catch(()=>undefined).then(async()=>{
+      const keyOnServer=collKey(key);
+      const persisted=await apiPost({collection:keyOnServer,action,id:recordId,data:record});
+      if(String(persisted?.id??'')!==recordId)throw new Error('Server belum mengonfirmasi penyimpanan.');
+      const saved=normalizeCollection(key,[persisted])[0];
+      const replace=rows=>{
+        const updated=indexById(rows);
+        updated.set(recordId,saved);
+        return [...updated.values()];
+      };
+      localRevision++;
+      state[key]=replace(state[key]);
+      baseline[key]=clone(replace(baseline[key]||[]));
+      if(cacheAllowed()){await writeCache(key,baseline[key]);await clearManifestCache();}
+      return saved;
+    });
+    pending=task;
+    return task;
+  }
+  // Import only writes the records in this file, using the same authenticated API as other saves.
+  function importInitiatives(prepare){
+    localRevision++;
+    const operation=pending.catch(()=>undefined).then(async()=>{
+      const key='initiatives',revision=localRevision;
+      function applyRows(rows){
+        const normalized=normalizeCollection(key,rows);
+        if(revision===localRevision)state[key]=normalized;
+        baseline[key]=clone(normalized);
+        localRevision++;
+      }
+      const current=(await apiGet([key],{serverOnly:true}))[key]||[];
+      const {changes,outcomes}=await prepare(normalizeCollection(key,current));
+      const merged=indexById(current);
+      const attempted=[];
+      for(let offset=0;offset<changes.length;offset+=15){
+        const part=changes.slice(offset,offset+15);
+        try{
+          const reply=await apiPost({collection:key,action:'BATCH',reportOutcomes:true,changes:part.map(({code,...write})=>write)});
+          const receipts=indexById(Array.isArray(reply)?reply:[]);
+          for(const change of part){
+            const receipt=receipts.get(String(change.id));
+            attempted.push({change,status:receipt?.status||'unconfirmed',code:receipt?.code});
+          }
+        }catch(error){
+          const rejected=[400,401,403].includes(error.status);
+          for(const change of part)attempted.push({change,status:rejected?'failed':'unconfirmed',code:error.code||error.status});
+          for(const change of changes.slice(offset+part.length))outcomes.set(change.code,{status:'not-attempted'});
+          break;
+        }
+      }
+      let fresh;
+      if(attempted.length)try{fresh=(await apiGet([key],{serverOnly:true}))[key]}catch{/* Receipts remain usable when readback is unavailable. */}
+      const verifiedFresh=Array.isArray(fresh);
+      const latest=indexById(verifiedFresh?fresh:[]);
+      for(const result of attempted){
+        const {change}=result;
+        const id=String(change.id);
+        const saved=latest.get(id);
+        // A lost response can still be reconciled against the intended record and its milestones.
+        const matches=saved&&Object.entries(change.data).every(([field,value])=>sameInitiativeValue(saved[field],value));
+        const confirmed=result.status==='saved'||matches;
+        if(confirmed&&!verifiedFresh)merged.set(id,{...merged.get(id),...change.data,id:change.id});
+        outcomes.set(change.code,{status:confirmed?'saved':result.status,code:result.code,action:change.action});
+      }
+      const rows=verifiedFresh?fresh:[...merged.values()];
+      applyRows(rows);
+      if(cacheAllowed()){await writeCache(key,rows);await clearManifestCache();}
+      return outcomes;
+    });
+    pending=operation;
+    return operation;
+  }
+  function sameInitiativeValue(a,b){
+    if(a===b)return true;
+    if(!a||!b||typeof a!=='object'||typeof b!=='object'||Array.isArray(a)!==Array.isArray(b))return false;
+    const keys=Object.keys(b);
+    return Object.keys(a).length===keys.length&&keys.every(key=>sameInitiativeValue(a[key],b[key]));
   }
   function deleteRecord(key,id){
     const collection=collKey(key);
@@ -255,7 +338,7 @@
     if(window.GX_AUTH_READY) await window.GX_AUTH_READY;
     if(!window.GXFirebase) throw new Error('Firebase runtime unavailable.');
     const u=await window.GXFirebase.currentUser();
-    if(!u) throw new Error('Authentication required.');
+    if(!u)throw Object.assign(new Error('Authentication required.'),{status:401,code:'AUTH_REQUIRED'});
     const s=typeof window.gxGetSession==='function'?(window.gxGetSession()||{}):window.GX_CURRENT_USER||{};
     if(!s.uid || String(s.uid)!==String(u.uid)) throw new Error('Authoritative user profile/session belum siap.');
     return s;
@@ -271,6 +354,6 @@
   }
   async function loadInboxThread(id){const t=await token(),r=await fetchWithTimeout('/api/edition1-data?thread='+encodeURIComponent(id),{headers:{Authorization:'Bearer '+t},cache:'no-store'}),p=await r.json();if(!r.ok)throw Error(p.message||'Conversation could not be loaded.');return p.thread||[]}
   async function replyInbox(id,body){const result=await apiPost({collection:'inbox',action:'CREATE',id:globalThis.crypto?.randomUUID?.()||String(Date.now()),data:{replyToId:String(id),body:String(body||'').trim()}});await clearManifestCache();return result}
-  window.data=state; window.GEStore={get:()=>state,save,deleteRecord,hydrate,refresh,waitAuth,markInboxRead,loadInboxThread,replyInbox,isHydrated:()=>hydrated,flush:()=>pending,source:'Firestore',projectId:window.GX_FIREBASE_CONFIG?.projectId||''};
+  window.data=state; window.GEStore={get:()=>state,save,saveRecord,importInitiatives,deleteRecord,hydrate,refresh,waitAuth,markInboxRead,loadInboxThread,replyInbox,isHydrated:()=>hydrated,flush:()=>pending,source:'Firestore',projectId:window.GX_FIREBASE_CONFIG?.projectId||''};
   window.addEventListener('gx-data-save-error',e=>{if(e.detail?.message)console.error('Firestore save failed:',e.detail.message)});
 })();

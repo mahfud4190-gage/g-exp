@@ -4,7 +4,7 @@ const { FieldValue } = require('firebase-admin/firestore');
 const {canChangeReadState} = require('./inbox-policy');
 
 const COLLECTIONS = new Set([
-  'airports','initiatives','news','touchpoints','documents','projectEvents','loungePurchases','loungeVisitors',
+  'airports','initiatives','news','touchpoints','documents','projectEvents','loungePurchases','loungeVisitors','flightSchedule',
   'stationMaterials','boSpaces','serviceProcurement','airportSystems','skyPriority','touchpointStandards',
   'gasoMaster','gasoServiceSupport','gasoPlanningService','personnel','articles','announcements','faqs',
   'inbox','auditLogs','users','lounges','standardContent','portalManager','contactMessages','guestbook',
@@ -37,7 +37,7 @@ function isExternalActor(actor){
 function ownsRecord(actor,row){return [row?.ownerUserId,row?.createdBy,row?.actorId,row?.userId].filter(Boolean).map(String).includes(String(actor?.id||''));}
 const MODULE_BY_COLLECTION = {
   initiatives:'initiatives', projectEvents:'calendar', inbox:'inbox', airports:'data', personnel:'data',
-  lounges:'planning', loungeVisitors:'lounge-visitor', loungePurchases:'lounge-purchase',
+  lounges:'planning', loungeVisitors:'lounge-visitor', loungePurchases:'lounge-purchase', flightSchedule:'lounge-flights',
   stationMaterials:'planning', boSpaces:'planning', serviceProcurement:'planning', airportSystems:'planning',
   gasoMaster:'planning', gasoServiceSupport:'planning', gasoPlanningService:'planning', documents:'planning',
   news:'news', articles:'news', announcements:'news', faqs:'news', contactMessages:'contact', guestbook:'contact',
@@ -90,7 +90,7 @@ function allowedStations(actor){
   return new Set(a.map(x=>String(x&&typeof x==='object'?(x.stationCode||x.code||x.iata||x.airportCode||x.id||''):x).trim().toUpperCase()).filter(Boolean));
 }
 function stationsOf(x){
-  const raw=x?.stations ?? x?.stationCodes ?? x?.stationCode ?? x?.airport ?? x?.station ?? x?.relatedAirport ?? [];
+  const raw=(x?.flight&&x?.from&&x?.to?[x.from,x.to]:undefined) ?? x?.stations ?? x?.stationCodes ?? x?.stationCode ?? x?.airport ?? x?.station ?? x?.relatedAirport ?? [];
   const list=Array.isArray(raw)?raw:String(raw||'').split(/[,;]+/);
   return list.map(v=>String(v||'').trim().toUpperCase()).filter(Boolean);
 }
@@ -188,7 +188,7 @@ function cleanData(data){
 async function bumpCacheVersion(db,collection){
   await db.collection('portalMetadata').doc('cacheState').set({version:FieldValue.increment(1),updatedAt:FieldValue.serverTimestamp(),lastCollection:String(collection||'')},{merge:true});
 }
-async function writeOne(db,actor,collection,action,id,raw){
+async function writeOne(db,actor,collection,action,id,raw,{initiativeImport=false}={}){
   if(!COLLECTIONS.has(collection)) throw Object.assign(new Error(`Collection not allowed: ${collection}`),{statusCode:400,code:'COLLECTION_NOT_ALLOWED'});
   if(!(collection==='inbox' && ['CREATE','UPDATE'].includes(action)) && !(collection==='contactMessages' && action==='CREATE' && !isExternalActor(actor)) && !canWrite(actor,collection)) throw Object.assign(new Error(`Write access denied for ${collection}.`),{statusCode:403,code:'FORBIDDEN'});
   if(['users','auditLogs'].includes(collection) && !(actor.role==='Super Admin'||isOperationalAdmin(actor))) throw Object.assign(new Error('Administrative access required.'),{statusCode:403,code:'FORBIDDEN'});
@@ -197,7 +197,7 @@ async function writeOne(db,actor,collection,action,id,raw){
   if(isExternalActor(actor) && !['initiatives','projectEvents'].includes(collection)) throw Object.assign(new Error(`Write access denied for ${collection}.`),{statusCode:403,code:'FORBIDDEN'});
   if(action==='DELETE')return db.runTransaction(async transaction=>{
     const snap=await transaction.get(ref); if(!snap.exists) return {id:ref.id,deleted:false};
-    const prev=snap.data()||{}; if(collection==='touchpoints'&&prev.sourceType==='CSI') throw Object.assign(new Error('CSI touch point cannot be deleted.'),{statusCode:403,code:'CSI_TOUCHPOINT_LOCKED'}); if(isExternalActor(actor)&&!ownsRecord(actor,prev)) throw Object.assign(new Error('External users can only delete their own records.'),{statusCode:403,code:'OWNERSHIP_FORBIDDEN'}); if(!isExternalActor(actor)&&!inScope(actor,prev)) throw Object.assign(new Error('Record outside account scope.'),{statusCode:403,code:'SCOPE_FORBIDDEN'});
+    const prev=snap.data()||{}; if(collection==='touchpoints' && /(?:^|[^a-z])(nps|csi)(?:[^a-z]|$)/i.test([prev.sourceType,prev.source,prev.sourceLabel,prev.origin,prev.originSource].filter(Boolean).join(' '))) throw Object.assign(new Error('Corporate NPS/CSI touch points cannot be deleted.'),{statusCode:403,code:'TOUCHPOINT_SOURCE_PROTECTED'}); if(isExternalActor(actor)&&!ownsRecord(actor,prev)) throw Object.assign(new Error('External users can only delete their own records.'),{statusCode:403,code:'OWNERSHIP_FORBIDDEN'}); if(!isExternalActor(actor)&&!inScope(actor,prev)) throw Object.assign(new Error('Record outside account scope.'),{statusCode:403,code:'SCOPE_FORBIDDEN'});
     if(collection==='initiatives' && !isExternalActor(actor) && actor.role!=='Super Admin' && !isOperationalAdmin(actor)) throw Object.assign(new Error('Admin access required to delete initiatives.'),{statusCode:403,code:'HIERARCHY_FORBIDDEN'});
     transaction.delete(ref);
     transaction.set(db.collection('portalMetadata').doc('cacheState'),{version:FieldValue.increment(1),updatedAt:FieldValue.serverTimestamp(),lastCollection:collection},{merge:true});
@@ -248,7 +248,7 @@ async function writeOne(db,actor,collection,action,id,raw){
     }
   }
 
-  if(collection==='touchpoints'&&existing.exists&&prev.sourceType==='CSI'&&String(data.name||'')!==String(prev.name||'')) throw Object.assign(new Error('CSI touch point name is immutable.'),{statusCode:403,code:'CSI_TOUCHPOINT_LOCKED'});
+  if(collection==='touchpoints'&&existing.exists&&/(?:^|[^a-z])(nps|csi)(?:[^a-z]|$)/i.test([prev.sourceType,prev.source,prev.sourceLabel,prev.origin,prev.originSource].filter(Boolean).join(' '))) throw Object.assign(new Error('Corporate NPS/CSI touch points cannot be edited.'),{statusCode:403,code:'CSI_TOUCHPOINT_LOCKED'});
   if(collection==='inbox'&&action==='CREATE')data.notificationStatus='Unread';
   if(isExternalActor(actor) && existing.exists && !ownsRecord(actor,prev)) throw Object.assign(new Error('External users can only update their own records.'),{statusCode:403,code:'OWNERSHIP_FORBIDDEN'});
   if(!isExternalActor(actor) && existing.exists && !inScope(actor,prev)) throw Object.assign(new Error('Record outside account scope.'),{statusCode:403,code:'SCOPE_FORBIDDEN'});
@@ -264,10 +264,27 @@ async function writeOne(db,actor,collection,action,id,raw){
   }
   if(isExternalActor(actor) && collection==='initiatives'){delete data.touchPoint;delete data.touchpoint;delete data.touchPoints;delete data.touchpoints;delete data.station;delete data.stations;data.ownerUserId=actor.id;data.visibility='EXTERNAL_PRIVATE';data.initiativeScope='GENERAL';}
   if(isExternalActor(actor) && collection==='projectEvents'){data.ownerUserId=actor.id;data.visibility='EXTERNAL_PRIVATE';}
-  const station=stationOf({...prev,...data}); if(!isExternalActor(actor) && station && !inScope(actor,{airport:station,stationCode:station})) throw Object.assign(new Error('Station outside account scope.'),{statusCode:403,code:'SCOPE_FORBIDDEN'});
+  const station=stationOf({...prev,...data}); if(!isExternalActor(actor) && station && !inScope(actor,collection==='flightSchedule'?{...prev,...data}:{airport:station,stationCode:station})) throw Object.assign(new Error('Station outside account scope.'),{statusCode:403,code:'SCOPE_FORBIDDEN'});
   const now=FieldValue.serverTimestamp();
   const next={...data,updatedAt:now,updatedBy:actor.id}; if(!existing.exists){next.createdAt=now;next.createdBy=actor.id;if(collection==='initiatives'){next.createdByRole=actor.role;next.createdByAccessLevel=actor.accessLevel||''}}else if(collection==='initiatives'){next.createdByRole=prev.createdByRole||'';next.createdByAccessLevel=prev.createdByAccessLevel||''}
   if(action==='CREATE' && existing.exists) throw Object.assign(new Error('Record already exists.'),{statusCode:409,code:'ALREADY_EXISTS'});
+  if(initiativeImport){
+    if(action==='UPDATE'&&!existing.exists)throw Object.assign(new Error('Record no longer exists.'),{statusCode:409,code:'RECORD_CHANGED'});
+    const batch=db.batch();
+    if(action==='CREATE')batch.create(ref,next);
+    else batch.update(ref,next,{lastUpdateTime:existing.updateTime});
+    batch.set(db.collection('portalMetadata').doc('cacheState'),{
+      version:FieldValue.increment(1),updatedAt:now,lastCollection:collection
+    },{merge:true});
+    batch.create(dataQuery(db,'auditLogs').doc(),{
+      actorId:actor.id,actorRole:actor.role,name:actor.name||actor.username||actor.email||actor.id,
+      username:actor.username||actor.email||'',module:collection,object:ref.id,
+      detail:`${collection} ${action.toLowerCase()}`,targetType:'EDITION1_INITIATIVES',targetId:ref.id,
+      action:action==='CREATE'?'Create':'Update',timestamp:now,result:'SUCCESS'
+    });
+    await batch.commit();
+    return {id:ref.id};
+  }
   await ref.set(next,{merge:action==='UPDATE'});
   await bumpCacheVersion(db,collection);
   if(collection==='inbox' && inboxAudience.length)await Promise.all(inboxAudience.map(uid=>dataRef(db,'inbox',`${ref.id}:${uid}`).set({...next,recipientId:uid},{merge:false})));
@@ -304,7 +321,7 @@ exports.handler=async(event)=>{
         return ok({ok:true,source:'Firestore',manifest:{version:Number(meta.version||0),updatedAt:meta.updatedAt||null,lastCollection:meta.lastCollection||''}});
       }
       const cols=queryCollections(event); if(!cols.length) return bad(400,'COLLECTION_REQUIRED','At least one collection is required.');
-      const out={}; for(const c of cols) out[c]=await readCollection(db,actor,c); return ok({ok:true,source:'Firestore',collections:out,actor:{id:actor.id,role:actor.role,accessLevel:actor.accessLevel||'',scopeType:actor.scopeType||'CUSTOM'}});
+      const out=Object.fromEntries(await Promise.all(cols.map(async c=>[c,await readCollection(db,actor,c)]))); return ok({ok:true,source:'Firestore',collections:out,actor:{id:actor.id,role:actor.role,accessLevel:actor.accessLevel||'',scopeType:actor.scopeType||'CUSTOM'}});
     }
     if(event.httpMethod==='POST'){
       let body; try{body=JSON.parse(event.body||'{}')}catch{return bad(400,'INVALID_JSON','Invalid JSON body.')}
@@ -315,6 +332,22 @@ exports.handler=async(event)=>{
         // Validate the entire batch before starting any writes.
         if(changes.some(ch=>!['CREATE','UPDATE'].includes(String(ch?.action||'').toUpperCase())))
           return bad(400,'INVALID_BATCH_ACTION','Batch only accepts CREATE and UPDATE.');
+        if(collection==='initiatives'&&body.reportOutcomes===true){
+          const ids=changes.map(change=>String(change.id||''));
+          if(ids.some(id=>!id)||new Set(ids).size!==ids.length)
+            return bad(400,'INVALID_BATCH_IDS','Initiative import requires one unique ID per record.');
+          const result=await Promise.all(changes.map(async change=>{
+            const id=String(change.id);
+            try{
+              await writeOne(db,actor,collection,String(change.action).toUpperCase(),id,change.data||{},{initiativeImport:true});
+              return {id,status:'saved'};
+            }catch(error){
+              const known=error.statusCode>=400&&error.statusCode<500||[5,6,9,10].includes(error.code);
+              return {id,status:known?'failed':'unconfirmed',code:String(error.code||'INITIATIVE_WRITE_ERROR')};
+            }
+          }));
+          return ok({ok:true,source:'Firestore',result});
+        }
         // One authenticated function request for a bulk import. Writes retain the exact
         // writeOne permission/scope/audit contract, but execute concurrently to remove
         // the previous row-by-row network wait experienced by the browser.

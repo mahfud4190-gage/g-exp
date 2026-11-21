@@ -100,53 +100,114 @@ function geProgressToneR17(value){
  if(v<100)return '#2d6688';
  return '#073b67';
 }
-function renderInitiativeCharts(rows){
+function initiativeKey(value){return String(value||'').trim().toLowerCase()}
+function initiativeAllTouchpoints(value){
+ return /^(all|semua) touch ?points?$/.test(initiativeKey(value));
+}
+function initiativeValues(value){
+ return (Array.isArray(value)?value:String(value||'').split(/[|,;]/)).map(x=>String(x||'').trim()).filter(Boolean);
+}
+function initiativeTouchpoints(row){
+ return initiativeValues(row.touchpoints?.length?row.touchpoints:row.tp||row.touchpoint);
+}
+function initiativeJourneys(row){
+ return initiativeValues(row.journeyScopes?.length?row.journeyScopes:row.journey);
+}
+function initiativeTouchpointCatalog(rows){
+ const catalog=new Map();
+ function add(name,journeys){
+   const key=initiativeKey(name);
+   if(!key||initiativeAllTouchpoints(name))return;
+   if(!catalog.has(key))catalog.set(key,{name,journeys:new Set()});
+   const scopes=initiativeValues(journeys);
+   if(!scopes.length&&getJourney(name))scopes.push(getJourney(name));
+   scopes.forEach(journey=>catalog.get(key).journeys.add(initiativeKey(journey)));
+ }
+ for(const point of data.touchpoints||[]){
+   if(typeof point==='string')add(point);
+   else if(point)add(point.name||point.title||point.touchpoint||point.code,point.journeyScopes||point.journey||point.journeyStage||point.stage);
+ }
+ for(const row of rows){
+   for(const name of initiativeTouchpoints(row)){
+     if(!catalog.has(initiativeKey(name)))add(name,getJourney(name)||initiativeJourneys(row));
+   }
+ }
+ return [...catalog.values()].sort((a,b)=>a.name.localeCompare(b.name,'id'));
+}
+function initiativeMatchesJourney(row,journey){
+ const scopes=initiativeJourneys(row).map(initiativeKey);
+ if(!scopes.length)return true;
+ return scopes.some(scope=>scope===journey||/^(all|semua)( journey)?$/.test(scope));
+}
+function initiativeMatchesTouchpoint(row,point){
+ if(!point)return false;
+ const points=initiativeTouchpoints(row);
+ return points.some(name=>initiativeKey(name)===initiativeKey(point.name))||
+   (points.some(initiativeAllTouchpoints)&&(!point.journeys.size||[...point.journeys].some(journey=>initiativeMatchesJourney(row,journey))));
+}
+function initiativeSummaryModel(){
+ const period=window.geSelectedPortalPeriod?.();
+ const rows=(data.initiatives||[]).filter(geInitiativeScopedV224).filter(row=>{if(!period)return true;const first=Number(row.planningYear||row.year||String(row.startDate||row.periodStart||'').match(/20\d{2}/)?.[0]||0);const last=Number(String(row.endDate||row.periodEnd||'').match(/20\d{2}/)?.[0]||first);return !first||(first<=period.end&&Math.max(last,first)>=period.start)});
+ const journey=initiativeKey(document.querySelector('.journey-tab.active[data-journey]')?.dataset.journey);
+ const catalog=initiativeTouchpointCatalog(rows);
+ const points=journey?catalog.filter(point=>!point.journeys.size||point.journeys.has(journey)):catalog;
+ const visibleRows=journey?rows.filter(row=>{
+   if(!initiativeMatchesJourney(row,journey))return false;
+   return initiativeJourneys(row).length||!initiativeTouchpoints(row).length||points.some(point=>initiativeMatchesTouchpoint(row,point));
+ }):rows;
+ return {points,rows:visibleRows};
+}
+function refreshInitiativeTouchpointOptions(points){
+ const select=document.getElementById('ft');
+ if(!select)return;
+ const current=initiativeKey(select.value);
+ const names=['',...points.map(point=>point.name)];
+ if(select.options.length!==names.length||names.some((name,index)=>select.options[index].value!==name))
+   select.replaceChildren(new Option('Semua Touch Point',''),...points.map(point=>new Option(point.name,point.name)));
+ select.value=points.find(point=>initiativeKey(point.name)===current)?.name||'';
+}
+function renderInitiativeCharts(model=initiativeSummaryModel()){
  const box=document.getElementById('initiativeCharts');
  if(!box)return;
- const groups={};
- rows.forEach(x=>{
-   const key=x.tp||'Touch Point Lainnya';
-   groups[key]??={plan:0,real:0,count:0};
-   groups[key].plan+=+x.plan||0;
-   groups[key].real+=+x.real||0;
-   groups[key].count++;
- });
- const items=Object.entries(groups).slice(0,8);
- if(!items.length){
-   box.innerHTML='<div class="card"><p>Belum ada data inisiatif untuk ditampilkan.</p></div>';
+ const {points,rows}=model;
+ const selected=initiativeKey(document.getElementById('ft')?.value);
+ const groups=points.map(point=>({name:point.name,rows:rows.filter(row=>initiativeMatchesTouchpoint(row,point))})).filter(group=>group.rows.length);
+ if(!groups.length){
+   box.innerHTML='<p class="initiative-progress-empty">Belum ada data inisiatif untuk ditampilkan.</p>';
    return;
  }
- box.innerHTML=items.map(([tp,v])=>{
-   const target=Math.min(100,Math.round(v.plan/v.count)||0);
-   const actual=Math.min(100,Math.round(v.real/v.count)||0);
+ box.innerHTML=groups.map(({name,rows:members})=>{
+   const average=field=>Math.max(0,Math.min(100,Math.round(members.reduce((sum,row)=>sum+(Number(row[field])||0),0)/members.length)));
+   const target=average('plan'),actual=average('real');
    const r=58,c=2*Math.PI*r;
    const td=(target/100)*c,ad=(actual/100)*c;
-   const tone=geProgressToneR17(actual);
-   return `<button type="button" class="radial-card ge-touchpoint-filter-card" style="--ge-progress-tone:${tone}" title="Buka Gantt: ${geEsc(tp)}" onclick="geFilterInitiativeTouchpoint(${JSON.stringify(tp)})">
+   return `<button type="button" class="radial-card ge-touchpoint-filter-card" style="--ge-progress-tone:${geProgressToneR17(actual)}" data-initiative-touchpoint="${geEsc(name)}" aria-pressed="${initiativeKey(name)===selected}" aria-controls="initRows">
     <div class="radial-chart">
-      <svg viewBox="0 0 140 140">
+      <svg viewBox="0 0 140 140" aria-hidden="true">
         <circle class="track" cx="70" cy="70" r="${r}"></circle>
         <circle class="target" cx="70" cy="70" r="${r}" stroke-dasharray="${td} ${c-td}"></circle>
-        <circle class="actual" cx="70" cy="70" r="${r}" stroke-dasharray="${ad} ${c-ad}"></circle>
+        ${actual?`<circle class="actual" cx="70" cy="70" r="${r}" stroke-dasharray="${ad} ${c-ad}"></circle>`:''}
       </svg>
       <div class="radial-center"><strong>${actual}%</strong><span>Realisasi</span></div>
     </div>
-    <div class="chart-title">${tp}</div>
-    <div class="chart-meta"><span>Target <b>${target}%</b></span><span>Realisasi <b>${actual}%</b></span></div>
+    <div class="chart-title">${geEsc(name)}</div>
+    <div class="chart-meta"><span>Target <b>${target}%</b></span><span>${members.length} inisiatif</span></div>
    </button>`;
  }).join('');
+ box.onclick=event=>{
+   const card=event.target.closest('[data-initiative-touchpoint]');
+   if(card)geFilterInitiativeTouchpoint(card.dataset.initiativeTouchpoint);
+ };
 }
 function geFilterInitiativeTouchpoint(tp){
-  const value=String(tp||'').trim();
-  const ft=document.getElementById('ft');
-  const q=document.getElementById('q');
-  const fs=document.getElementById('fs');
-  if(q)q.value='';
-  if(fs)fs.value='';
-  refreshInitiativeFilters();
-  if(ft){ft.value=value;if(ft.value!==value)ft.value='';}
-  renderInitiatives();
-  document.getElementById('initRows')?.scrollIntoView({behavior:'smooth',block:'start'});
+ const select=document.getElementById('ft');
+ if(!select)return;
+ select.value=tp;
+ window.GE_INITIATIVE_FOCUS_ID_R65='';
+ document.getElementById('geInitiativeFocusNoticeR65')?.remove();
+ window.renderInitiatives?.();
+ select.focus({preventScroll:true});
+ document.getElementById('initiativeListSection')?.scrollIntoView({behavior:'smooth',block:'start'});
 }
 function renderInitiatives(){
  refreshInitiativeFilters();
@@ -164,14 +225,17 @@ function renderInitiatives(){
      </tr>`;
    }).join('');
  }
- renderInitiativeCharts(rows);
+ renderInitiativeCharts();
 }
 function setJourneyFilter(journey){
- activeJourney=journey||'';
- document.querySelectorAll('.journey-tab').forEach(x=>
-   x.classList.toggle('active',x.dataset.journey===activeJourney)
- );
- renderInitiatives();
+ activeJourney=String(journey||'');
+ window.GE_ACTIVE_JOURNEY=activeJourney;
+ document.querySelectorAll('.journey-tab[data-journey]').forEach(button=>{
+   const selected=button.dataset.journey===activeJourney;
+   button.classList.toggle('active',selected);
+   button.setAttribute('aria-pressed',String(selected));
+ });
+ window.renderInitiatives?.();
 }
 function addInitiative(){
  const tp=(document.getElementById('itp')?.value||'').trim();
@@ -352,7 +416,7 @@ const airportMapInfo={
 function showAirportTooltip(ev,code){
  const t=document.getElementById('mapTooltip'),m=document.getElementById('interactiveMap'),d=airportMapInfo[code];
  if(!t||!m||!d)return;
- const mr=m.getBoundingClientRect(),er=ev.currentTarget.getBoundingClientRect();
+ const mr=m.getBoundingClientRect(),er=marker.getBoundingClientRect();
  t.innerHTML=`<b>${d.code} — ${d.name}</b><small>${d.city} • ${d.region}</small><small>Status: ${d.status} · Pending: ${d.pending}</small><small>Visitor Lounge: ${d.visitor}</small>`;
  t.style.left=(er.left-mr.left+er.width/2)+'px';
  t.style.top=(er.top-mr.top)+'px';
@@ -419,19 +483,43 @@ function renderDocumentsHome(){
 }
 function renderDocumentsAdmin(){
  const box=document.getElementById('documentAdminList');if(!box)return;
- box.innerHTML=(data.documents||[]).map(x=>`<div class="document-row"><div><b>${x.title}</b><small>${x.fileName}</small></div><span>${x.category}</span><span>${x.source}</span><span>${x.date}</span><div>${x.blobKey?`<button class="ge-btn secondary" onclick="GEFiles.download('${x.blobKey}','${String(x.fileName).replaceAll("'","")}')">Download</button>`:''} <button class="ge-btn" data-role-min="Admin" onclick="deletePortalDocument(${x.id})">Delete</button></div></div>`).join('');
+ box.innerHTML=(data.documents||[]).map(x=>`<div class="document-row"><div><b>${x.title}</b><small>${x.fileName}</small></div><span>${x.category}</span><span>${x.source}</span><span>${x.date}</span><div>${x.blobKey?`<button class="ge-btn secondary" onclick="GEFiles.download('${x.blobKey}','${String(x.fileName).replaceAll("'","")}')">Download</button>`:''} <button class="ge-btn" data-role-min="Admin" data-document-id="${geEsc(x.id)}" onclick="deletePortalDocument(this.dataset.documentId)">Delete</button></div></div>`).join('');
  if(typeof gxApplyRole==='function')gxApplyRole();
 }
+async function uploadPortalDocument(form,file,metadata){
+ if(!form||!file||form.dataset.saving==='true')return;
+ form.dataset.saving='true';
+ const button=form.querySelector('[type="submit"]');
+ if(button)button.disabled=true;
+ const id=crypto.randomUUID();
+ const key='portal-documents/'+id;
+ try{
+   await window.GEFiles.put(key,file);
+   await store.saveRecord('documents','CREATE',id,{
+     ...metadata,date:new Date().toISOString().slice(0,10),fileName:file.name,blobKey:key
+   });
+ }catch(error){
+   geStorageNoticeV223('Dokumen belum tersimpan',error.message||'Silakan coba kembali.','error');
+   return;
+ }finally{
+   delete form.dataset.saving;
+   if(button)button.disabled=false;
+ }
+ form.reset();
+ renderDocumentsAdmin();
+ renderDocumentsHome();
+ geStorageNoticeV223('Dokumen tersimpan',metadata.title,'success');
+}
 async function addPortalDocument(){
- const f=document.getElementById('docFile')?.files?.[0];if(!f)return;
- const key='doc_'+Date.now();await GEFiles.put(key,f);
- data.documents.push({id:Date.now(),title:docTitle.value.trim(),category:docCategory.value.trim(),source:docSource.value,date:new Date().toISOString().slice(0,10),fileName:f.name,note:docNote.value.trim(),blobKey:key});
- save();documentForm.reset();renderDocumentsAdmin();renderDocumentsHome();alert('Dokumen berhasil disimpan offline dan ditampilkan pada Beranda.');
+ if(!geCanManageMasterData())return;
+ const form=document.getElementById('documentForm'),file=document.getElementById('docFile')?.files?.[0];
+ if(!file)return geStorageNoticeV223('Pilih dokumen','Pilih file yang akan diunggah.');
+ return uploadPortalDocument(form,file,{title:docTitle.value.trim(),category:docCategory.value.trim(),source:docSource.value,note:docNote.value.trim()});
 }
 async function addInitiativeDocument(form){
- const f=form.elements.file.files?.[0];if(!f)return;const key='initdoc_'+Date.now();await GEFiles.put(key,f);
- data.documents.push({id:Date.now(),title:form.elements.title.value.trim(),category:form.elements.category.value.trim()||'Laporan Inisiatif',source:'Kegiatan & Inisiatif',date:new Date().toISOString().slice(0,10),fileName:f.name,note:activeJourney||'',blobKey:key});
- save();form.reset();alert('Dokumen berhasil diunggah dan akan tampil pada Beranda.');
+ const file=form?.elements.file.files?.[0];
+ if(!file)return geStorageNoticeV223('Pilih dokumen','Pilih file yang akan diunggah.');
+ return uploadPortalDocument(form,file,{title:form.elements.title.value.trim(),category:form.elements.category.value.trim()||'Laporan Inisiatif',source:'Kegiatan & Inisiatif',note:activeJourney||''});
 }
 async function deletePortalDocument(id){if(confirm('Hapus dokumen dari daftar?')){if(!await geDeleteFirestoreRecord('documents',id))return;renderDocumentsAdmin();renderDocumentsHome()}}
 
@@ -1689,7 +1777,7 @@ function renderPersonnel(){
     <td>${i+1}</td><td>${x.employeeNo||'-'}</td><td><b>${x.name||'-'}</b></td>
     <td>${x.position||'-'}</td><td>${x.sitaCode||'-'}</td><td><b>${x.airport||'-'}</b></td>
     <td><span class="function-pill">${x.function||'-'}</span></td><td>${x.email||'-'}</td>
-    ${can?`<td class="visitor-actions"><button class="ge-btn secondary compact-btn" onclick="openPersonnelModal(${x.id})">Edit</button><button class="ge-btn danger compact-btn" onclick="deletePersonnel(${x.id})">Delete</button></td>`:''}
+    ${can?`<td class="visitor-actions"><button class="ge-btn secondary compact-btn" type="button" data-personnel-id="${geEsc(x.id)}" onclick="openPersonnelModal(this.dataset.personnelId)">Edit</button><button class="ge-btn danger compact-btn" type="button" data-personnel-id="${geEsc(x.id)}" onclick="deletePersonnel(this.dataset.personnelId)">Delete</button></td>`:''}
   </tr>`).join('');
   if(typeof geEnhanceAllTables==='function')setTimeout(geEnhanceAllTables,0);
 }
@@ -1701,20 +1789,39 @@ function openPersonnelModal(id=null){
   personnelName.value=x?.name||'';personnelPosition.value=x?.position||'';
   personnelSitaCode.value=x?.sitaCode||'';personnelAirport.value=x?.airport||'';
   personnelFunction.value=x?.function||'';personnelEmail.value=x?.email||'';
-  document.getElementById('personnelModal').classList.add('show');
+  const modal=document.getElementById('personnelModal');
+ const form=modal.querySelector('form');if(form)delete form.dataset.newRecordId;
+ modal.classList.add('show');
 }
 function closePersonnelModal(){document.getElementById('personnelModal')?.classList.remove('show')}
-function savePersonnel(){
-  if(!geCanManageMasterData())return;
-  const id=Number(personnelEditId.value||0);
-  const obj={
-    id:id||Date.now(),employeeNo:personnelEmployeeNo.value.trim(),name:personnelName.value.trim(),
-    position:personnelPosition.value.trim(),sitaCode:personnelSitaCode.value.trim(),
-    airport:personnelAirport.value.trim().toUpperCase(),function:personnelFunction.value.trim().toUpperCase(),
-    email:personnelEmail.value.trim().toUpperCase()
-  };
-  if(id)Object.assign(data.personnel.find(p=>p.id===id),obj);else data.personnel.push(obj);
-  save();closePersonnelModal();renderPersonnel();renderPersonnelReadiness();
+async function savePersonnel(){
+ const form=document.getElementById('personnelModal')?.querySelector('form');
+ if(!geCanManageMasterData()||!form||form.dataset.saving==='true')return;
+ const id=personnelEditId.value.trim();
+ const record={employeeNo:personnelEmployeeNo.value.trim(),name:personnelName.value.trim(),
+   position:personnelPosition.value.trim(),sitaCode:personnelSitaCode.value.trim(),
+   airport:personnelAirport.value.trim().toUpperCase(),function:personnelFunction.value.trim().toUpperCase(),
+   email:personnelEmail.value.trim()};
+ if(!record.name)return geStorageNoticeV223('Data Belum Lengkap','Nama personil wajib diisi.');
+ const recordId=id||form.dataset.newRecordId||crypto.randomUUID();
+ if(!id)form.dataset.newRecordId=recordId;
+ form.dataset.saving='true';
+ const submit=form.querySelector('[type="submit"]');
+ if(submit)submit.disabled=true;
+ try{
+   await store.saveRecord('personnel',id?'UPDATE':'CREATE',recordId,record);
+ }catch(error){
+   geStorageNoticeV223('Personil belum tersimpan',error.message||'Silakan coba kembali.','error');
+   return;
+ }finally{
+   delete form.dataset.saving;
+   if(submit)submit.disabled=false;
+ }
+ closePersonnelModal();
+ renderPersonnel();
+ renderAirports();
+ renderPersonnelReadiness();
+ geStorageNoticeV223('Personil tersimpan',record.name,'success');
 }
 async function deletePersonnel(id){
   if(!geCanManageMasterData())return;
@@ -1787,7 +1894,7 @@ function renderDocumentsAdmin(){
  const ce=document.getElementById('docAdminCategory');if(ce){const cur=ce.value;ce.innerHTML='<option value="">Semua Kategori</option>'+cats.map(x=>`<option>${x}</option>`).join('');ce.value=cur}
  const se=document.getElementById('docAdminSource');if(se){const cur=se.value;se.innerHTML='<option value="">Semua Sumber</option>'+sources.map(x=>`<option>${x}</option>`).join('');se.value=cur}
  const rows=(data.documents||[]).filter(x=>(!q||`${x.title} ${x.fileName} ${x.note}`.toLowerCase().includes(q))&&(!cat||x.category===cat)&&(!src||x.source===src));
- box.innerHTML=rows.map(x=>`<div class="document-row"><div><b>${x.title}</b><small>${x.fileName}</small></div><span>${x.category}</span><span>${x.source}</span><span>${x.date}</span><div>${x.blobKey?`<button class="ge-btn secondary" onclick="GEFiles.download('${x.blobKey}','${String(x.fileName).replaceAll("'","")}')">Download</button>`:''} <button class="ge-btn" data-role-min="Admin" onclick="deletePortalDocument(${x.id})">Delete</button></div></div>`).join('');
+ box.innerHTML=rows.map(x=>`<div class="document-row"><div><b>${x.title}</b><small>${x.fileName}</small></div><span>${x.category}</span><span>${x.source}</span><span>${x.date}</span><div>${x.blobKey?`<button class="ge-btn secondary" onclick="GEFiles.download('${x.blobKey}','${String(x.fileName).replaceAll("'","")}')">Download</button>`:''} <button class="ge-btn" data-role-min="Admin" data-document-id="${geEsc(x.id)}" onclick="deletePortalDocument(this.dataset.documentId)">Delete</button></div></div>`).join('');
  if(typeof gxApplyRole==='function')gxApplyRole();
 }
 
@@ -2012,9 +2119,9 @@ let GE_LAST_SAVED_SNAPSHOT=null;
 function geSafeClone(v){try{return JSON.parse(JSON.stringify(v))}catch(e){return null}}
 function geAuditUser(){return typeof gxGetSession==='function'?(gxGetSession()||{}):(window.GX_CURRENT_USER||{})}
 function geObjectChangedFields(a,b){
-  const ignore=new Set(['updatedAt','password','raw','content','answer','body','coverKey','documentKey']);
+  const omittedFields=new Set(['updatedAt','password','raw','content','answer','body','coverKey','documentKey']);
   return [...new Set([...Object.keys(a||{}),...Object.keys(b||{})])]
-    .filter(k=>!ignore.has(k)&&JSON.stringify(a?.[k])!==JSON.stringify(b?.[k]))
+    .filter(k=>!omittedFields.has(k)&&JSON.stringify(a?.[k])!==JSON.stringify(b?.[k]))
     .slice(0,8);
 }
 function geAuditPush(logs,action,module,obj,detail){
@@ -2085,25 +2192,37 @@ function renderAdminInbox(){
  const t=document.getElementById('adminInboxRows');if(!t)return;
  const filter=document.getElementById('inboxTypeFilter');if(filter){const current=filter.value;filter.innerHTML='<option value="">Semua Jenis</option>'+[...new Set((data.inbox||[]).map(x=>x.type).filter(Boolean))].sort().map(v=>`<option value="${geEsc(v)}">${geEsc(v)}</option>`).join('');filter.value=current}
  t.innerHTML=inboxFiltered().map((x,i)=>`<tr class="${x.status==='Unread'?'unread-row':''}" data-inbox-id="${geEsc(x.id)}" style="cursor:pointer">
- <td>${i+1}</td><td>${geDateTime(x.createdAt)}</td><td><span class="inbox-type">${geEsc(x.type||'-')}</span></td>
+ <td>${i+1}</td><td>${geDateTime(x.createdAt||x.timestamp||x.at||x.date)}</td><td><span class="inbox-type">${geEsc(x.type||'-')}</span></td>
  <td><b>${geEsc(x.senderName||x.from||'-')}</b><small>${geEsc(x.senderRole||'')}</small></td><td>${geEsc(x.senderArea||x.area||'-')}</td><td>${geEsc(x.subject||x.title||'-')}</td>
  <td><span class="pill">${geEsc(x.status||'Unread')}</span></td><td class="inbox-actions">
  <button class="ge-btn secondary compact-btn" data-inbox-open="${geEsc(x.id)}">Buka</button>
  ${x.type==='Article Proposal'&&x.status!=='Handled'?`<button class="ge-btn compact-btn" data-inbox-review="${geEsc(x.id)}">Review</button>`:''}
  <button class="ge-btn danger compact-btn" data-inbox-delete="${geEsc(x.id)}">Delete</button>
  </td></tr>`).join('')||'<tr><td colspan="8">Belum ada pesan sesuai filter.</td></tr>';
- if(!t.dataset.bound){t.dataset.bound='1';t.addEventListener('click',e=>{const row=e.target.closest('[data-inbox-id]');if(!row)return;const id=row.dataset.inboxId;if(e.target.closest('[data-inbox-delete]'))deleteInbox(id);else if(e.target.closest('[data-inbox-review]'))reviewProposal(id);else openInboxDetail(id)})}
+ if(!window.__geInboxActionsBound){
+   window.__geInboxActionsBound=true;
+   document.addEventListener('click',e=>{
+     const action=e.target.closest('[data-inbox-open],[data-inbox-delete],[data-inbox-review]');
+     if(!action||!action.closest('#adminInboxRows'))return;
+     const id=action.closest('[data-inbox-id]')?.dataset.inboxId;
+     if(!id)return;
+     e.preventDefault();e.stopPropagation();
+     if(action.matches('[data-inbox-delete]'))void deleteInbox(id);
+     else if(action.matches('[data-inbox-review]'))reviewProposal(id);
+     else void openInboxDetail(id);
+   });
+ }
  if(typeof geEnhanceAllTables==='function')setTimeout(geEnhanceAllTables,0);renderAdminOverview();
 }
 function findInbox(id){return(data.inbox||[]).find(v=>String(v.id)===String(id))}
 async function openInboxDetail(id){
  const x=findInbox(id);if(!x)return;
- if(x.status==='Unread'){try{await window.GEStore.markInboxRead(x.id,'inbox');window.dispatchEvent(new Event('gx-inbox-ready'))}catch(e){console.warn('[Inbox read]',e);const target=document.getElementById('adminInboxRows');if(target){const row=target.querySelector(`[data-inbox-id="${String(id).replace(/[^\w:.-]/g,'')}"]`);if(row)row.title='Status baca belum tersimpan: '+(e.message||e)}return}}
+ const shouldMarkRead=x.status==='Unread';
  const body=document.getElementById('inboxDetailBody');if(!body)return;
  const related=x.referenceId||x.relatedId||x.articleId;
  const support=x.relatedType==='contactMessages'||x.type==='Contact Support';
  body.innerHTML=`<div class="inbox-detail-head"><span class="inbox-type">${geEsc(x.type||'-')}</span><h2>${geEsc(x.subject||x.title||'-')}</h2>
- <p>Dari <b>${geEsc(x.senderName||x.from||'-')}</b> • ${geEsc(x.senderArea||x.area||'-')} • ${geDateTime(x.createdAt)}</p></div>
+ <p>Dari <b>${geEsc(x.senderName||x.from||'-')}</b> • ${geEsc(x.senderArea||x.area||'-')} • ${geDateTime(x.createdAt||x.timestamp||x.at||x.date)}</p></div>
  <div class="inbox-body-content">${x.type==='Article Proposal'?geSanitizeHTML(x.body||''):`<p>${geEsc(x.body||x.message||'').replace(/\n/g,'<br>')}</p>`}</div>
  ${!support&&!['Task Assignment','System Notification'].includes(x.type)&&x.senderId&&x.recipientId?`<section class="ge-inbox-thread"><h3>Percakapan</h3><div id="inboxThreadHistory">Memuat percakapan…</div><label>Balasan<textarea id="inboxReplyText" rows="3" placeholder="Tulis balasan"></textarea></label><button type="button" class="ge-btn" id="inboxReplySend">Kirim Balasan</button><p id="inboxReplyStatus" role="status"></p></section>`:''}
  <div class="modal-actions">${support&&related?`<button class="ge-btn" id="inboxSupportOpen">Buka Percakapan</button>`:''}${x.type==='Article Proposal'&&x.status!=='Handled'?`<button class="ge-btn" id="inboxReviewOpen">Review Artikel</button>`:''}${x.type==='Task Assignment'&&related?`<button class="ge-btn" id="inboxTaskOpen">Lihat Task</button>`:''}<button class="ge-btn secondary" id="inboxCloseButton">Close</button></div>`;
@@ -2112,14 +2231,36 @@ async function openInboxDetail(id){
  body.querySelector('#inboxReviewOpen')?.addEventListener('click',()=>{closeInboxDetail();reviewProposal(id)});
  body.querySelector('#inboxTaskOpen')?.addEventListener('click',()=>location.assign(`app.html?page=inisiatif&initiative=${encodeURIComponent(related)}`));
  body.querySelector('#inboxCloseButton')?.addEventListener('click',closeInboxDetail);
- document.getElementById('inboxDetailModal').classList.add('show');renderAdminInbox();
+ const dialog=document.getElementById('inboxDetailModal');
+ if(!dialog)return;
+ dialog.classList.add('show');
+ if(shouldMarkRead){
+   try{
+     await window.GEStore.markInboxRead(x.id,'inbox');
+     x.status='Read';renderAdminInbox();window.dispatchEvent(new Event('gx-inbox-ready'));
+   }catch(e){console.warn('[Inbox read]',e);const feedback=dialog.querySelector('.inbox-detail-head');if(feedback){const note=document.createElement('p');note.textContent='Pesan terbuka, tetapi status baca belum tersimpan: '+(e.message||e);feedback.appendChild(note)}}
+ }
 }
 function closeInboxDetail(){document.getElementById('inboxDetailModal')?.classList.remove('show')}
 function markInboxHandled(id){const x=findInbox(id);if(x){x.status='Handled';save();renderAdminInbox()}}
 async function deleteInbox(id){if(confirm('Hapus pesan ini?')){if(!await geDeleteFirestoreRecord('inbox',id))return;renderAdminInbox()}}
 
 /* ---------- Audit ---------- */
-function geDateTime(v){try{return new Date(v).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'})}catch(e){return v||'-'}}
+function geDateTime(v){
+ try{
+   if(v==null||v==='')return '—';
+   let value=v;
+   if(typeof v==='object'){
+     if(typeof v.toDate==='function')value=v.toDate();
+     else if(Number.isFinite(Number(v.seconds??v._seconds)))value=new Date(Number(v.seconds??v._seconds)*1000+Math.floor(Number(v.nanoseconds??v._nanoseconds??0)/1e6));
+     else if(v.iso)value=v.iso;
+   }else if(typeof v==='number'||(/^\d{10,13}$/.test(String(v)))){
+     const n=Number(v);value=n<1e11?n*1000:n;
+   }
+   const date=value instanceof Date?value:new Date(value);
+   return Number.isFinite(date.getTime())?date.toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'}):'—';
+ }catch{return '—'}
+}
 function auditFiltered(){
  const q=(document.getElementById('auditSearch')?.value||'').toLowerCase(),act=document.getElementById('auditActionFilter')?.value||'',
  mod=document.getElementById('auditModuleFilter')?.value||'',date=document.getElementById('auditDateFilter')?.value||'';
@@ -2360,13 +2501,33 @@ function geAirportVisibleRows(){
   ;['lounges','serviceProcurement','stationMaterials','airportSystems','facilities','assets'].forEach(k=>(data[k]||[]).forEach(x=>add(x.airport||x.station||x.stationCode||x.code,x)));
   return base.map(geAirportCanonicalR8).filter(a=>a.code&&Number.isFinite(Number(a.lat))&&Number.isFinite(Number(a.lon))&&!(Number(a.lat)===0&&Number(a.lon)===0)&&(typeof gxAirportAllowed!=='function'||gxAirportAllowed(a.code))).map(geAirportDerived);
 }
-function geSetAirportStatus(code,status){
-  if(!(typeof gxCanManage==='function'&&gxCanManage()))return;
-  const a=(data.airports||[]).find(x=>x.code===code);if(!a)return;
-  a.status=status;save();renderAirports();renderAirportMapMarkers();
+function airportMasterRows(){
+ return (data.airports||[]).map(geAirportCanonicalR8).filter(airport=>airport.code&&
+   (typeof gxAirportAllowed!=='function'||gxAirportAllowed(airport.code))).map(geAirportDerived);
+}
+async function geSetAirportStatus(code,status,control){
+ const airport=(data.airports||[]).find(row=>geAirportCanonicalR8(row).code===code);
+ const previous=airport?.status||'Active';
+ if(!geAdminV231()||!airport||!['Active','Inactive'].includes(status)||previous===status){
+   if(control)control.value=previous;
+   return;
+ }
+ if(control)control.disabled=true;
+ try{
+   await store.saveRecord('airports','UPDATE',airport.id,{status});
+ }catch(error){
+   if(control)control.value=previous;
+   geStorageNoticeV223('Status belum tersimpan',error.message||'Silakan coba kembali.','error');
+   return;
+ }finally{
+   if(control)control.disabled=false;
+ }
+ renderAirports();
+ window.renderAirportMapMarkers?.();
+ geStorageNoticeV223('Status airport tersimpan',`${code} sekarang berstatus ${status}.`,'success');
 }
 function populateAirportMasterFilters(){
-  const rows=geAirportVisibleRows();
+  const rows=airportMasterRows();
   const fill=(id,label,vals)=>{
     const e=document.getElementById(id);if(!e)return;const cur=e.value;
     e.innerHTML=`<option value="">${label}</option>`+[...new Set(vals.filter(Boolean))].sort().map(x=>`<option>${x}</option>`).join('');
@@ -2380,7 +2541,7 @@ function airportMasterFiltered(){
   const w=document.getElementById('airportWilayahFilter')?.value||'';
   const r=document.getElementById('airportRegionFilter')?.value||'';
   const s=document.getElementById('airportStatusFilter')?.value||'';
-  return geAirportVisibleRows().filter(a=>
+  return airportMasterRows().filter(a=>
     (!q||`${a.code} ${a.city} ${a.gm}`.toLowerCase().includes(q))&&
     (!w||a.wilayah===w)&&(!r||a.region===r)&&(!s||a.status===s)
   );
@@ -2397,7 +2558,7 @@ function renderAirports(){
     <td>${a.pending?`<span class="pending-count">${a.pending}</span>`:'<span class="clear-count">0</span>'}</td>
   </tr>`).join('');
 
-  const all=geAirportVisibleRows(),set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v};
+  const all=airportMasterRows(),set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v};
   set('airportMasterTotal',all.length);
   set('airportMasterActive',all.filter(x=>x.status==='Active').length);
   set('airportMasterInactive',all.filter(x=>x.status==='Inactive').length);
@@ -2447,7 +2608,7 @@ function geAirportInfo(code){
 }
 function showAirportTooltip(ev,code){
   const d=geAirportInfo(code),t=document.getElementById('mapTooltip'),m=document.getElementById('interactiveMap');if(!d||!t||!m)return;
-  const mr=m.getBoundingClientRect(),er=ev.currentTarget.getBoundingClientRect();
+  const mr=m.getBoundingClientRect(),er=marker.getBoundingClientRect();
   t.innerHTML=`<div class="tooltip-airport-head"><b>${d.code} — ${geEsc(d.city)}</b><span class="${d.status==='Active'?'status-active':'status-inactive'}">${d.status}</span></div>
     <small>${geEsc(d.wilayah)} • ${geEsc(d.region||'-')}</small>
     <div class="tooltip-grid">
@@ -2552,7 +2713,7 @@ function showAirportTooltip(ev,code){
       <span>GM<b>${geEsc(d.gm)}</b></span><span>Visitor Lounge<b>${Number(d.visitorLounge).toLocaleString('id-ID')}</b></span>
       <span>Kontrak<b>${d.contracts}</b></span><span>Pending<b>${d.pending}</b></span>
     </div>`;
-  const mr=m.getBoundingClientRect(),er=ev.currentTarget.getBoundingClientRect();
+  const mr=m.getBoundingClientRect(),er=marker.getBoundingClientRect();
   const tooltipW=310, tooltipH=185;
   let left=er.left-mr.left+er.width/2;
   let top=er.top-mr.top-tooltipH-18;
@@ -2659,7 +2820,7 @@ function showAirportTooltip(ev,code){
       <span>Pending<b>${d.pending}</b></span>
     </div>`;
 
-  const mr=m.getBoundingClientRect(),er=ev.currentTarget.getBoundingClientRect();
+  const mr=m.getBoundingClientRect(),er=marker.getBoundingClientRect();
   const tooltipW=318, tooltipH=182;
   let left=er.left-mr.left + er.width/2;
   let top=er.top-mr.top - tooltipH - 15;
@@ -3851,7 +4012,7 @@ function geExcelSerialDateV223(v,timeOnly=false){
   }
   return String(v);
 }
-function geParseCSVV223(text){
+function geParseCSVV223(text,separator=','){
   const rows=[];let row=[],cell='',q=false;
   for(let i=0;i<text.length;i++){
     const c=text[i],n=text[i+1];
@@ -3861,7 +4022,7 @@ function geParseCSVV223(text){
       else cell+=c;
     }else{
       if(c==='"')q=true;
-      else if(c===','){row.push(cell);cell=''}
+      else if(c===separator){row.push(cell);cell=''}
       else if(c==='\n'){row.push(cell);rows.push(row);row=[];cell=''}
       else if(c!=='\r')cell+=c;
     }
@@ -4005,7 +4166,7 @@ const GE_IMPORT_SCHEMA_V223={
 };
 
 function openBulkImportV223(type){
-  if(type==='visitor'&&!geCanBulkUploadVisitorV223())return;
+  if(type==='visitor'&&!geCanBulkUploadVisitorV223())return geStorageNoticeV223('Akses ditolak','Anda tidak memiliki izin untuk mengimpor Visitor.');
   if(['space','system'].includes(type)&&!gePlanningCanManage())return;
   const schema=GE_IMPORT_SCHEMA_V223[type];if(!schema)return;
   GE_BULK_IMPORT_V223={type,rows:[],fileName:''};
@@ -4252,7 +4413,7 @@ renderInitiatives=function(){
       </tr>`;
     }).join('');
   }
-  renderInitiativeCharts(rows);
+  renderInitiativeCharts();
   if(typeof geEnhanceAllTables==='function')setTimeout(geEnhanceAllTables,0);
 };
 
@@ -4930,41 +5091,71 @@ function geDeleteConfirmV231(label){return confirm(`Hapus ${label}?`)}
 /* ---------- Airport Database CRUD ---------- */
 function openAirportModalV231(id=null){
  if(!geAdminV231())return;
- const x=id?(data.airports||[]).find(a=>String(a.id)===String(id)):null;
- airportModalTitleV231.textContent=x?'Update Database Airport':'Tambah Database Airport';
- airportEditIdV231.value=x?.id||'';airportCodeV231.value=x?.code||'';airportCityV231.value=x?.city||'';
- airportNameV231.value=x?.airportName||'';airportWilayahV231.value=x?.wilayah||'Domestik';
- airportRegionV231.value=x?.region||'';airportStatusV231.value=x?.status||'Active';
- airportLatV231.value=x?.lat??'';airportLonV231.value=x?.lon??'';
- airportModalV231.classList.add('show');
+ const form=document.getElementById('airportModalV231');
+ if(!form)return;
+ const stored=id==null?null:(data.airports||[]).find(row=>String(row.id)===String(id));
+ if(id!=null&&!stored)return geStorageNoticeV223('Airport tidak ditemukan','Muat ulang daftar airport lalu coba lagi.','warning');
+ const row=stored?geAirportCanonicalR8(stored):null;
+ document.getElementById('airportModalTitleV231').textContent=row?'Update Database Airport':'Tambah Database Airport';
+ form.dataset.newRecordId='';
+ const fields={EditId:row?.id??'',Code:row?.code||'',City:row?.city||'',Name:row?.airportName||'',
+   Wilayah:row?.wilayah||'Domestik',Region:row?.region||'',Status:row?.status||'Active',
+   Lat:stored?stored.lat??stored.latitude??stored.coordinates?.lat??'':'',
+   Lon:stored?stored.lon??stored.lng??stored.longitude??stored.coordinates?.lng??'':''};
+ for(const [field,value] of Object.entries(fields))document.getElementById('airport'+field+'V231').value=String(value);
+ form.classList.add('show');
 }
-function closeAirportModalV231(){airportModalV231?.classList.remove('show')}
-function saveAirportV231(){
+function closeAirportModalV231(){
+ const form=document.getElementById('airportModalV231');
+ if(form?.dataset.saving!=='true')form?.classList.remove('show');
+}
+async function saveAirportV231(){
  if(!geAdminV231())return;
- const id=Number(airportEditIdV231.value||0),code=airportCodeV231.value.trim().toUpperCase();
- if(!code||!airportCityV231.value.trim())return geStorageNoticeV223('Data Belum Lengkap','Airport Code dan City wajib diisi.');
- const duplicate=(data.airports||[]).find(a=>a.code===code&&a.id!==id);
- if(duplicate)return geStorageNoticeV223('Airport Sudah Ada',`${code} sudah tersedia pada Database Airport.`);
- const obj={id:id||Date.now(),no:0,code,city:airportCityV231.value.trim(),airportName:airportNameV231.value.trim(),
-   wilayah:airportWilayahV231.value,region:airportRegionV231.value.trim().toUpperCase(),regionSource:'Admin Master',
-   status:airportStatusV231.value,lat:Number(airportLatV231.value||0),lon:Number(airportLonV231.value||0)};
- if(id)Object.assign(data.airports.find(a=>a.id===id),obj);else data.airports.push(obj);
- data.airports.forEach((a,i)=>a.no=i+1);save();closeAirportModalV231();renderAirports();renderAirportMapMarkers();
+ const form=document.getElementById('airportModalV231');
+ if(!form||form.dataset.saving==='true')return;
+ const get=field=>document.getElementById('airport'+field+'V231').value.trim();
+ const id=get('EditId'),code=get('Code').toUpperCase(),city=get('City');
+ if(!code||!city)return geStorageNoticeV223('Data Belum Lengkap','Airport Code dan City wajib diisi.');
+ const airports=data.airports||[];
+ if(id&&!airports.some(row=>String(row.id)===id))return geStorageNoticeV223('Airport tidak ditemukan','Muat ulang daftar airport lalu coba lagi.');
+ if(airports.some(row=>geAirportCanonicalR8(row).code===code&&String(row.id)!==id))
+   return geStorageNoticeV223('Airport Sudah Ada',`${code} sudah tersedia pada Database Airport.`);
+ const lat=get('Lat'),lon=get('Lon');
+ if((lat==='' )!==(lon==='')||lat!==''&&(!Number.isFinite(Number(lat))||!Number.isFinite(Number(lon))||
+   Math.abs(Number(lat))>90||Math.abs(Number(lon))>180))
+   return geStorageNoticeV223('Koordinat belum valid','Isi kedua koordinat dengan latitude dan longitude yang valid, atau kosongkan keduanya.');
+ const record={code,city,airportName:get('Name'),wilayah:get('Wilayah'),region:get('Region').toUpperCase(),
+   regionSource:'Admin Master',status:get('Status'),lat:lat===''?null:Number(lat),lon:lon===''?null:Number(lon)};
+ const newId=id||form.dataset.newRecordId||crypto.randomUUID();
+ form.dataset.newRecordId=id?'':newId;
+ const button=form.querySelector('[onclick="saveAirportV231()"]');
+ form.dataset.saving='true';
+ if(button)button.disabled=true;
+ try{
+   await store.saveRecord('airports',id?'UPDATE':'CREATE',newId,record);
+ }catch(error){
+   geStorageNoticeV223('Airport belum tersimpan',error.message||'Silakan coba kembali.','error');
+   return;
+ }finally{
+   delete form.dataset.saving;
+   if(button)button.disabled=false;
+ }
+ closeAirportModalV231();
+ renderAirports();
+ window.renderAirportMapMarkers?.();
+ geStorageNoticeV223('Database airport tersimpan',`${code} — ${city}.`,'success');
 }
-async function deleteAirportV231(id){
- if(!geAdminV231())return;const x=(data.airports||[]).find(a=>a.id===id);if(!x||!geDeleteConfirmV231(`Airport ${x.code}`))return;
- if(!await geDeleteFirestoreRecord('airports',id))return;renderAirports();renderAirportMapMarkers();
-}
+let deleteAirportV231;
 renderAirports=function(){
  const t=document.getElementById('airportRows');if(!t)return;
  populateAirportMasterFilters();const rows=airportMasterFiltered(),can=geAdminV231();
  t.innerHTML=rows.map((a,i)=>`<tr>
   <td>${a.no||i+1}</td><td><b>${geEsc(a.code)}</b></td><td>${geEsc(a.city)}</td><td>${geEsc(a.wilayah)}</td><td>${geEsc(a.region||'-')}</td>
-  <td>${can?`<select class="inline-status-select ${a.status==='Inactive'?'inactive':''}" onchange="geSetAirportStatus('${a.code}',this.value)"><option ${a.status==='Active'?'selected':''}>Active</option><option ${a.status==='Inactive'?'selected':''}>Inactive</option></select>`:`<span class="pill">${geEsc(a.status)}</span>`}</td>
+  <td>${can?`<select class="inline-status-select ${a.status==='Inactive'?'inactive':''}" data-airport-code="${geEsc(a.code)}" onchange="geSetAirportStatus(this.dataset.airportCode,this.value,this)"><option ${a.status==='Active'?'selected':''}>Active</option><option ${a.status==='Inactive'?'selected':''}>Inactive</option></select>`:`<span class="pill">${geEsc(a.status)}</span>`}</td>
   <td>${geEsc(a.gm)}</td><td>${Number(a.visitorLounge).toLocaleString('id-ID')}</td><td>${a.contracts}</td><td>${a.pending?`<span class="pending-count">${a.pending}</span>`:'<span class="clear-count">0</span>'}</td>
-  ${can?`<td class="visitor-actions"><button class="ge-btn secondary compact-btn" onclick="openAirportModalV231(${a.id})">Edit</button><button class="ge-btn danger compact-btn" onclick="deleteAirportV231(${a.id})">Delete</button></td>`:''}
+  ${can?`<td class="visitor-actions"><button class="ge-btn secondary compact-btn" type="button" data-airport-id="${geEsc(a.id)}" onclick="openAirportModalV231(this.dataset.airportId)">Edit</button><button class="ge-btn danger compact-btn" type="button" data-airport-id="${geEsc(a.id)}" onclick="deleteAirportV231(this.dataset.airportId)">Delete</button></td>`:''}
  </tr>`).join('');
- const all=geAirportVisibleRows(),set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v};
+ const all=airportMasterRows(),set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v};
  set('airportMasterTotal',all.length);set('airportMasterActive',all.filter(x=>x.status==='Active').length);set('airportMasterInactive',all.filter(x=>x.status==='Inactive').length);
  set('airportMasterContracts',all.reduce((s,x)=>s+x.contracts,0));set('airportMasterPending',all.reduce((s,x)=>s+x.pending,0));
  if(typeof geEnhanceAllTables==='function')setTimeout(geEnhanceAllTables,0);
@@ -5085,32 +5276,59 @@ Object.assign(GE_IMPORT_SCHEMA_V223,{
 });
 function geImportSimpleV231(type,rows){
  let added=0,skipped=0;
- if(type==='airport'){rows.forEach(r=>{const code=String(r.code||'').trim().toUpperCase();if(!code){skipped++;return}const existing=data.airports.find(a=>a.code===code);const obj={id:existing?.id||Date.now()+added,code,city:String(r.city||'').trim(),airportName:String(r.airportName||'').trim(),wilayah:String(r.wilayah||'Domestik').trim(),region:String(r.region||'').trim().toUpperCase(),status:String(r.status||'Active').trim(),lat:Number(r.lat||0),lon:Number(r.lon||0),regionSource:'Bulk Upload'};if(existing)Object.assign(existing,obj);else data.airports.push(obj);added++});data.airports.forEach((a,i)=>a.no=i+1);save();renderAirports();return{added,skipped}}
+ if(type==='airport'){rows.forEach(r=>{const code=String(r.code||'').trim().toUpperCase();if(!code){skipped++;return}const existing=data.airports.find(a=>a.code===code);const obj={id:existing?.id||Date.now()+added,code,city:String(r.city||'').trim(),airportName:String(r.airportName||'').trim(),wilayah:String(r.wilayah||'Domestik').trim(),region:String(r.region||'').trim().toUpperCase(),status:String(r.status||'Active').trim(),lat:Number(r.lat||0),lon:Number(r.lon||0),regionSource:'Bulk Upload'};if(existing)Object.assign(existing,obj);else data.airports.push(obj);added++});save();renderAirports();return{added,skipped}}
  if(type==='personnel'){rows.forEach(r=>{if(!String(r.name||'').trim()){skipped++;return}data.personnel.push({id:Date.now()+added,employeeNo:String(r.employeeNo||'').trim(),name:String(r.name||'').trim(),position:String(r.position||'').trim(),sitaCode:String(r.sitaCode||'').trim(),airport:String(r.airport||'').trim().toUpperCase(),function:String(r.function||'').trim().toUpperCase(),email:String(r.email||'').trim()});added++});save();renderPersonnel();return{added,skipped}}
  if(type==='station-material'){rows.forEach(r=>{if(!r.code||!r.product){skipped++;return}data.stationMaterials.push({id:Date.now()+added,code:String(r.code).trim(),product:String(r.product).trim(),area:String(r.area||'').trim(),vendor:String(r.vendor||'').trim(),startDate:String(r.startDate||'').trim(),endDate:String(r.endDate||'').trim(),contractPeriod:[String(r.startDate||'').trim(),String(r.endDate||'').trim()].filter(Boolean).join(' — '),status:String(r.status||'').trim(),documentName:'',documentKey:''});added++});save();renderStationMaterials();return{added,skipped}}
  if(type==='airport-system-v231'){rows.forEach(r=>{if(!r.airport){skipped++;return}data.airportSystems.push({id:Date.now()+added,airport:String(r.airport).trim().toUpperCase(),sbd:String(r.sbd||'').trim(),kiosk:String(r.kiosk||'').trim(),checkin:String(r.checkin||'').trim(),boardingGate:String(r.boardingGate||'').trim(),transferDesk:String(r.transferDesk||'').trim(),provider:String(r.provider||'').trim(),area:String(r.area||'').trim(),remarks:String(r.remarks||'').trim()});added++});save();renderAirportSystems();return{added,skipped}}
  const gm={'gaso-master':'gasoMaster','gaso-support':'gasoServiceSupport','gaso-planning':'gasoPlanningService'};if(gm[type]){rows.forEach(r=>{if(!r.code){skipped++;return}const obj={id:Date.now()+added,...r,code:String(r.code).trim().toUpperCase()};if('amount'in obj)obj.amount=Number(obj.amount||0);data[gm[type]].push(obj);added++});save();renderGasoAllV231();return{added,skipped}}
  return null;
 }
-async function geConfirmImportPersistedV240(result,successMessage){
+async function geConfirmImportPersistedV240(result,successMessage,persist){
  if(!result)return false;
+ const state=GE_BULK_IMPORT_V223;
+ const button=document.getElementById('bulkImportConfirmV223');
+ const label=button?.textContent;
+ state.pending={result,successMessage,persist};
+ const file=document.getElementById('bulkImportFileV223');
+ if(file)file.disabled=true;
+ if(button){button.disabled=true;button.textContent='Menyimpan…'}
  try{
-  if(window.GEStore?.flush)await window.GEStore.flush();
-  closeBulkImportV223();
-  geStorageNoticeV223('Import Selesai',successMessage,result.added?'success':'warning');
+  if(persist)await persist();else await store.flush();
+  if(GE_BULK_IMPORT_V223===state){
+   state.pending=null;
+   closeBulkImportV223();
+   geStorageNoticeV223('Import Selesai',successMessage,result.added?'success':'warning');
+  }
   return true;
  }catch(e){
-  console.error('[Bulk Import Firestore]',e);
-  geStorageNoticeV223('Import Gagal',`Data belum tersimpan ke Firestore. ${e?.message||String(e)}`,'error');
+  if(GE_BULK_IMPORT_V223===state){
+   const preview=document.getElementById('bulkImportPreviewV223');
+   preview?.querySelector('[data-save-error]')?.remove();
+   const unconfigured=e?.code==='FIREBASE_ADMIN_UNCONFIGURED'||e?.message==='Firebase Admin credentials are not configured.';
+   const detail=unconfigured
+    ?'Penyimpanan belum terhubung. Data dari percobaan ini belum tersimpan. Hubungi administrator portal.'
+    :'Penyimpanan terhenti. Periksa daftar data sebelum mencoba lagi.';
+   preview?.insertAdjacentHTML('beforeend',`<div class="bulk-import-save-alert" data-save-error role="alert"><strong>Impor belum selesai.</strong><p>${detail}</p></div>`);
+  }
   return false;
+ }finally{
+  if(file?.isConnected)file.disabled=false;
+  if(button?.isConnected&&GE_BULK_IMPORT_V223===state){button.disabled=false;button.textContent=label}
  }
 }
 async function confirmBulkImportV231(){
- const {type,rows}=GE_BULK_IMPORT_V223;if(!rows.length)return;let result;
+ const {type,rows,pending}=GE_BULK_IMPORT_V223;
+ if(pending){if(!pending.persist)save();return geConfirmImportPersistedV240(pending.result,pending.successMessage,pending.persist)}
+ if(!rows.length)return;let result;
  if(['airport','personnel','station-material','airport-system-v231','gaso-master','gaso-support','gaso-planning'].includes(type))result=geImportSimpleV231(type,rows);
- else if(type==='lounge')result=geImportLoungeV230(rows);else if(type==='space')result=geImportSpaceV223(rows);else if(type==='system')result=geImportSystemV223(rows);else if(type==='visitor')result=geImportVisitorV223(rows);
- if(!result)return;const extra=result.duplicates!==undefined?` • ${result.duplicates} duplikat`:'';
- return geConfirmImportPersistedV240(result,`${result.added} data berhasil ditambahkan • ${result.skipped} baris dilewati${extra}.`);
+ else if(type==='lounge')result=geImportLoungeV230(rows);
+ else if(type==='space')result=geImportSpaceV223(rows);
+ else if(type==='system')result=geImportSystemV223(rows);
+ else if(type==='visitor')result=geImportVisitorV223(rows);
+ else if(type==='service-procurement-v243')result=geImportServiceProcurementV243(rows);
+ if(!result)return;
+ const extra=result.duplicates!==undefined?` • ${result.duplicates} duplikat`:'';
+ return geConfirmImportPersistedV240(result,`${result.added} data berhasil diproses • ${result.skipped} baris dilewati${extra}.`);
 }
 
 /* ---------- Planning Documents: file download on every available binary ---------- */
@@ -5232,7 +5450,7 @@ function geCanManagePurchaseV232(){
 }
 function openPurchaseModalV232(id=null){
   if(!geCanManagePurchaseV232())return;
-  const x=id?(data.loungePurchases||[]).find(v=>v.id===id):null;
+  const x=id?(data.loungePurchases||[]).find(v=>String(v.id)===String(id)):null;
   purchaseModalTitleV232.textContent=x?'Update Pembelian Akses':'Tambah Pembelian Akses';
   purchaseEditIdV232.value=x?.id||'';
   purchaseNameV232.value=x?.name||'';purchaseFlightV232.value=x?.flight||'';
@@ -5244,6 +5462,7 @@ function openPurchaseModalV232(id=null){
   if(ap){ap.innerHTML=[...new Set((geVisibleLoungeRows()||[]).map(v=>v.airport))].sort().map(v=>`<option>${v}</option>`).join('');if(x?.airport)ap.value=x.airport}
   refreshPurchaseServicesV232();
   if(x?.serviceId)purchaseServiceV232.value=String(x.serviceId);
+  delete purchaseModalV232.dataset.newRecordId;
   purchaseModalV232.classList.add('show');
 }
 function closePurchaseModalV232(){purchaseModalV232?.classList.remove('show')}
@@ -5251,23 +5470,39 @@ function refreshPurchaseServicesV232(){
   const ap=document.getElementById('purchaseAirportV232')?.value||'';
   const sel=document.getElementById('purchaseServiceV232');if(!sel)return;
   const rows=(geVisibleLoungeRows()||[]).filter(x=>x.airport===ap && ['Lounge','Tenant'].includes(x.serviceType||x.serviceCategory||'Lounge'));
-  sel.innerHTML=rows.map(x=>`<option value="${x.id}">${geEsc(x.name)} • ${geEsc(x.serviceType||x.serviceCategory||'Lounge')}</option>`).join('');
+  sel.innerHTML=rows.map(x=>`<option value="${geEsc(x.id)}">${geEsc(x.name)} • ${geEsc(x.serviceType||x.serviceCategory||'Lounge')}</option>`).join('');
 }
-function savePurchaseV232(){
-  if(!geCanManagePurchaseV232())return;
-  const id=Number(purchaseEditIdV232.value||0),serviceId=Number(purchaseServiceV232.value||0);
-  const service=(data.lounges||[]).find(x=>x.id===serviceId);
-  const now=new Date();
-  const obj={id:id||Date.now(),date:now.toISOString().slice(0,10),time:now.toTimeString().slice(0,5),
-    name:purchaseNameV232.value.trim(),flight:purchaseFlightV232.value.trim().toUpperCase(),
-    airport:purchaseAirportV232.value,serviceId,serviceName:service?.name||'-',
-    accessType:purchaseTypeV232.value,reference:purchaseReferenceV232.value.trim(),
-    currency:purchaseCurrencyV232.value.trim().toUpperCase(),amount:Number(purchaseAmountV232.value||0),
-    status:purchaseStatusV232.value,remark:purchaseRemarkV232.value.trim()};
-  if(!obj.name||!obj.airport||!serviceId)return geStorageNoticeV223('Data Belum Lengkap','Nama Penumpang, Airport, dan Lounge/Tenant wajib diisi.');
-  data.loungePurchases=data.loungePurchases||[];
-  if(id)Object.assign(data.loungePurchases.find(x=>x.id===id),obj);else data.loungePurchases.push(obj);
-  save();closePurchaseModalV232();renderPurchaseV232();
+async function savePurchaseV232(){
+ if(!geCanManagePurchaseV232())return;
+ const modal=document.getElementById('purchaseModalV232');
+ if(!modal||modal.dataset.saving==='true')return;
+ const id=purchaseEditIdV232.value.trim(),serviceId=purchaseServiceV232.value;
+ const service=geVisibleLoungeRows().find(row=>String(row.id)===serviceId&&row.airport===purchaseAirportV232.value);
+ const now=new Date();
+ const record={date:now.toISOString().slice(0,10),time:now.toTimeString().slice(0,5),
+   name:purchaseNameV232.value.trim(),flight:purchaseFlightV232.value.trim().toUpperCase(),
+   airport:purchaseAirportV232.value,serviceId:service?.id,serviceName:service?.name||'-',
+   accessType:purchaseTypeV232.value,reference:purchaseReferenceV232.value.trim(),
+   currency:purchaseCurrencyV232.value.trim().toUpperCase(),amount:Number(purchaseAmountV232.value||0),
+   status:purchaseStatusV232.value,remark:purchaseRemarkV232.value.trim()};
+ if(!record.name||!service)return geStorageNoticeV223('Data Belum Lengkap','Nama Penumpang, Airport, dan Lounge/Tenant wajib diisi.');
+ modal.dataset.saving='true';
+ const button=modal.querySelector('[onclick="savePurchaseV232()"]');
+ if(button)button.disabled=true;
+ const recordId=id||modal.dataset.newRecordId||crypto.randomUUID();
+ if(!id)modal.dataset.newRecordId=recordId;
+ try{
+   await store.saveRecord('loungePurchases',id?'UPDATE':'CREATE',recordId,record);
+ }catch(error){
+   geStorageNoticeV223('Pembelian belum tersimpan',error.message||'Silakan coba kembali.','error');
+   return;
+ }finally{
+   delete modal.dataset.saving;
+   if(button)button.disabled=false;
+ }
+ closePurchaseModalV232();
+ renderPurchaseV232();
+ geStorageNoticeV223('Pembelian tersimpan',record.name,'success');
 }
 async function deletePurchaseV232(id){
   if(!geCanManagePurchaseV232()||!confirm('Hapus transaksi pembelian akses ini?'))return;
@@ -5282,7 +5517,7 @@ function renderPurchaseV232(){
     return(!q||`${x.name} ${x.flight} ${x.reference}`.toLowerCase().includes(q))&&(!a||x.airport===a)&&(!st||x.status===st);
   });
   gePlanningPopulateSelect('purchaseAirportFilterV232',(data.loungePurchases||[]).map(x=>x.airport),'Semua Airport');
-  tbody.innerHTML=rows.map((x,i)=>`<tr><td>${i+1}</td><td>${x.date}</td><td>${x.time}</td><td><b>${geEsc(x.name)}</b></td><td>${geEsc(x.flight||'-')}</td><td>${geEsc(x.airport)}</td><td>${geEsc(x.serviceName||'-')}</td><td>${geEsc(x.accessType)}</td><td>${geEsc(x.reference||'-')}</td><td>${geEsc(x.currency)} ${Number(x.amount||0).toLocaleString('id-ID')}</td><td>${geEsc(x.status)}</td><td class="visitor-actions"><button class="ge-btn secondary compact-btn" onclick="openPurchaseModalV232(${x.id})">Edit</button><button class="ge-btn danger compact-btn" onclick="deletePurchaseV232(${x.id})">Delete</button></td></tr>`).join('');
+  tbody.innerHTML=rows.map((x,i)=>`<tr><td>${i+1}</td><td>${x.date}</td><td>${x.time}</td><td><b>${geEsc(x.name)}</b></td><td>${geEsc(x.flight||'-')}</td><td>${geEsc(x.airport)}</td><td>${geEsc(x.serviceName||'-')}</td><td>${geEsc(x.accessType)}</td><td>${geEsc(x.reference||'-')}</td><td>${geEsc(x.currency)} ${Number(x.amount||0).toLocaleString('id-ID')}</td><td>${geEsc(x.status)}</td><td class="visitor-actions"><button class="ge-btn secondary compact-btn" data-purchase-id="${geEsc(x.id)}" onclick="openPurchaseModalV232(this.dataset.purchaseId)">Edit</button><button class="ge-btn danger compact-btn" data-purchase-id="${geEsc(x.id)}" onclick="deletePurchaseV232(this.dataset.purchaseId)">Delete</button></td></tr>`).join('');
   const all=data.loungePurchases||[],set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v};
   set('purchaseTotalV232',all.length);set('purchasePaidV232',all.filter(x=>x.status==='Paid').length);set('purchasePendingV232',all.filter(x=>x.status==='Pending').length);set('purchaseAirportCountV232',new Set(all.map(x=>x.airport)).size);
   gePlanningEmpty('purchaseEmptyV232',rows);if(typeof geEnhanceAllTables==='function')setTimeout(geEnhanceAllTables,0);
@@ -5535,14 +5770,15 @@ deleteUserAccount = async function(id){
 };
 
 deletePersonnel = async function(id){
-  if(!geCanManagePersonnel())return;
-  const x=(data.personnel||[]).find(v=>v.id===id);if(!x)return;
+  if(!geCanManageMasterData())return;
+  const x=(data.personnel||[]).find(v=>String(v.id)===String(id));if(!x)return;
   if(!await geConfirmDeleteV234({
     title:'Hapus Data Personil?',
     item:`${x.name||'Personil'} • ${x.airport||'HO'}`,
     message:'Data personil akan dihapus dari master Airport & Head Office.'
   }))return;
-  if(!await geDeleteFirestoreRecord('personnel',id))return;renderPersonnel();
+  if(!await geDeleteFirestoreRecord('personnel',id))return;renderPersonnel();renderAirports();
+  geStorageNoticeV223('Personil dihapus',x.name||'Personil','success');
 };
 
 deleteInbox = async function(id){
@@ -5620,9 +5856,10 @@ geDeleteConfirmV231 = async function(label){
 
 /* Functions that formerly called synchronous geDeleteConfirmV231 are explicitly overridden. */
 deleteAirportV231 = async function(id){
-  if(!geAdminV231())return;const x=(data.airports||[]).find(a=>a.id===id);if(!x)return;
+  if(!geAdminV231())return;const x=(data.airports||[]).find(a=>String(a.id)===String(id));if(!x)return;
   if(!await geConfirmDeleteV234({title:'Hapus Database Airport?',item:`${x.code} — ${x.city}`,message:'Airport akan dihapus dari master dan tidak lagi menjadi referensi utama portal.'}))return;
-  if(!await geDeleteFirestoreRecord('airports',id))return;renderAirports();renderAirportMapMarkers();
+  if(!await geDeleteFirestoreRecord('airports',id))return;renderAirports();window.renderAirportMapMarkers?.();
+  geStorageNoticeV223('Airport dihapus',`${x.code} berhasil dihapus dari master.`,'success');
 };
 deleteStationMaterialV231 = async function(id){
   if(!geAdminV231())return;const x=(data.stationMaterials||[]).find(v=>v.id===id);if(!x)return;
@@ -5641,7 +5878,7 @@ deleteGasoV231 = async function(type,id){
 };
 
 deletePurchaseV232 = async function(id){
-  if(!geCanManagePurchaseV232())return;const x=(data.loungePurchases||[]).find(v=>v.id===id);if(!x)return;
+  if(!geCanManagePurchaseV232())return;const x=(data.loungePurchases||[]).find(v=>String(v.id)===String(id));if(!x)return;
   if(!await geConfirmDeleteV234({title:'Hapus Pembelian Akses?',item:`${x.name||'Penumpang'} • ${x.flight||'-'} • ${x.reference||x.accessType||'-'}`,message:'Transaksi akses Lounge/Tenant akan dihapus dari daftar.'}))return;
   if(!await geDeleteFirestoreRecord('loungePurchases',id))return;renderPurchaseV232();
 };
@@ -5871,7 +6108,7 @@ renderLoungeVisitors=function(){
 };
 
 /* Flight schedule */
-function geCanManageFlightsV236(){return ['Super Admin','Admin','Branch Office'].includes((geSession()||{}).role)}
+function geCanManageFlightsV236(){const s=geSession()||{};return ['Super Admin','Admin'].includes(s.role)||(s.role==='Branch Office'&&['Editor','Approver','Admin'].includes(s.accessLevel))}
 function geFlightVisibleV236(x){
   const s=geSession()||{};if(['Super Admin','Admin'].includes(s.role)||s.scopeType==='ALL')return true;
   if(['Branch Office','Lounge Staff','Lounge Luar Biasa'].includes(s.role))return typeof gxAirportAllowed==='function'?(gxAirportAllowed(x.from)||gxAirportAllowed(x.to)):true;
@@ -5900,16 +6137,42 @@ function renderFlightsV236(){
   tbody.innerHTML=rows.map((x,i)=>`<tr><td>${i+1}</td><td><b>${geEsc(x.flight)}</b></td><td>${geEsc(x.from)}-${geEsc(x.to)}</td><td>${x.date}</td><td>${x.std||'-'}</td><td>${x.etd||'-'}</td><td>${Number(x.capacity||0).toLocaleString('id-ID')}</td><td><span class="flight-status-v236 ${String(x.status||'').toLowerCase().replace(/\s+/g,'-')}">${geEsc(x.status||'-')}</span></td><td>${geCanManageFlightsV236()?`<div class="visitor-actions"><button class="ge-btn secondary compact-btn" onclick="openFlightModalV236(${x.id})">Edit</button><button class="ge-btn danger compact-btn" onclick="deleteFlightV236(${x.id})">Delete</button></div>`:'-'}</td></tr>`).join('');gePlanningEmpty('flightEmptyV236',rows);if(typeof geEnhanceAllTables==='function')setTimeout(geEnhanceAllTables,0);
 }
 let GE_FLIGHT_BULK_ROWS_V236=[];
-function openFlightBulkV236(){if(!geCanManageFlightsV236())return;GE_FLIGHT_BULK_ROWS_V236=[];flightBulkFileV236.value='';flightBulkPreviewV236.innerHTML='Belum ada file dipilih.';flightBulkConfirmV236.disabled=true;flightBulkModalV236.classList.add('show')}
+function openFlightBulkV236(){if(!geCanManageFlightsV236())return;GE_FLIGHT_BULK_ROWS_V236=[];flightImportBatch=null;flightBulkFileV236.value='';flightBulkPreviewV236.innerHTML='Belum ada file dipilih.';flightBulkConfirmV236.disabled=true;flightBulkModalV236.classList.add('show')}
 function closeFlightBulkV236(){flightBulkModalV236?.classList.remove('show')}
 async function previewFlightBulkV236(file){
-  if(!file)return;try{const raw=await geReadTabularFileV223(file),rows=geRowsToObjectsV223(raw,{flight:['flight'],from:['from'],to:['to'],date:['tanggal','date'],std:['std'],etd:['etd'],capacity:['capacity'],status:['status']});GE_FLIGHT_BULK_ROWS_V236=rows;flightBulkPreviewV236.innerHTML=`<div class="bulk-import-summary"><b>${rows.length}</b><span>baris data terbaca</span></div>`;flightBulkConfirmV236.disabled=!rows.length}catch(e){flightBulkPreviewV236.innerHTML=`<div class="bulk-import-error">${geEsc(e.message||String(e))}</div>`}
+  if(!file)return;flightBulkConfirmV236.disabled=true;flightImportBatch=null;try{const raw=await geReadTabularFileV223(file),rows=geRowsToObjectsV223(raw,{flight:['flight'],from:['from'],to:['to'],date:['tanggal','date'],std:['std'],etd:['etd'],capacity:['capacity'],status:['status']});GE_FLIGHT_BULK_ROWS_V236=rows;flightBulkPreviewV236.innerHTML=`<div class="bulk-import-summary"><b>${rows.length}</b><span>baris data terbaca</span></div>`;flightBulkConfirmV236.disabled=!rows.length}catch(e){flightBulkPreviewV236.innerHTML=`<div class="bulk-import-error">${geEsc(e.message||String(e))}</div>`}
 }
-function confirmFlightBulkV236(){
-  if(!geCanManageFlightsV236())return;let added=0,skipped=0;data.flightSchedule=data.flightSchedule||[];
-  GE_FLIGHT_BULK_ROWS_V236.forEach(r=>{const flight=normalizeFlight(r.flight),from=String(r.from||'').trim().toUpperCase(),to=String(r.to||'').trim().toUpperCase(),date=geNormalizeDateUploadV223(r.date);if(!flight||!from||!to||!date){skipped++;return}data.flightSchedule.push({id:Date.now()+added,flight,from,to,date,std:String(r.std||'').slice(0,5),etd:String(r.etd||'').slice(0,5),capacity:Number(r.capacity||0),status:String(r.status||'Scheduled').trim()});added++});
-  save();closeFlightBulkV236();renderFlightsV236();geStorageNoticeV223('Import Selesai',`${added} penerbangan ditambahkan • ${skipped} dilewati.`,'success');
+let flightImportBatch=null;
+async function confirmFlightBulkV236(){
+ if(!geCanManageFlightsV236()||flightBulkConfirmV236.disabled)return;
+ const button=flightBulkConfirmV236;
+ button.disabled=true;
+ button.textContent='Menyimpan…';
+ if(!flightImportBatch){
+  const result={added:0,skipped:0},rows=[];
+  for(const row of GE_FLIGHT_BULK_ROWS_V236){
+   const flight=normalizeFlight(row.flight),from=String(row.from||'').trim().toUpperCase(),to=String(row.to||'').trim().toUpperCase(),date=geNormalizeDateUploadV223(row.date);
+   if(!flight||!from||!to||!date){result.skipped++;continue}
+   rows.push({id:Date.now()+result.added,flight,from,to,date,std:geNormalizeTimeUploadV223(row.std),etd:geNormalizeTimeUploadV223(row.etd),capacity:Number(row.capacity||0),status:String(row.status||'Scheduled').trim()});
+   result.added++;
+  }
+  if(!rows.length){button.textContent='Import Data';flightBulkPreviewV236.textContent='Tidak ada baris jadwal valid.';return}
+  data.flightSchedule.push(...rows);
+  flightImportBatch=result;
+ }
+ try{
+  save();
+  await store.flush();
+  const {added,skipped}=flightImportBatch;
+  flightImportBatch=null;
+  if(button.isConnected){closeFlightBulkV236();renderFlightsV236();geStorageNoticeV223('Import Selesai',`${added} jadwal tersimpan • ${skipped} dilewati.`,'success')}
+ }catch(error){
+  if(button.isConnected)flightBulkPreviewV236.textContent='Impor belum selesai: '+error.message;
+ }finally{
+  if(button.isConnected){button.textContent='Import Data';button.disabled=false}
+ }
 }
+Object.assign(window,{openFlightBulkV236,closeFlightBulkV236,previewFlightBulkV236,confirmFlightBulkV236,openFlightModalV236,closeFlightModalV236,saveFlightV236,deleteFlightV236,renderFlightsV236,geInitLoungeFlights(){geFlightActionsVisibilityV236();renderFlightsV236()}});
 window.addEventListener('DOMContentLoaded',()=>{geFlightActionsVisibilityV236();renderFlightsV236()});
 
 if(!GE_TAB_OPTIONS.some(x=>x[0]==='lounge-flights'))GE_TAB_OPTIONS.splice(7,0,['lounge-flights','Daftar Penerbangan']);
@@ -6295,7 +6558,7 @@ geMapFilteredAirports=function(){
 showAirportTooltip=function(ev,code){
   const d=geAirportInfo(code),t=document.getElementById('mapTooltip'),m=document.getElementById('interactiveMap');if(!d||!t||!m)return;const s=geAirportServiceInfoV243(code);
   t.innerHTML=`<div class="tooltip-airport-head"><b>${d.code} — ${geEsc(d.city)}</b><span class="${d.status==='Active'?'status-active':'status-inactive'}">${d.status}</span></div><small>${geEsc(d.wilayah)} • ${geEsc(d.region||'-')}</small><div class="tooltip-grid"><span>GM<b>${geEsc(d.gm)}</b></span><span>Visitor Lounge<b>${Number(d.visitorLounge).toLocaleString('id-ID')}</b></span><span>Lounge/Tenant<b>${s.lounges.length}</b></span><span>SGHA<b>${s.sgha.length}</b></span><span>Other Service<b>${s.other.length}</b></span><span>Pending<b>${d.pending}</b></span></div>`;
-  const mr=m.getBoundingClientRect(),er=ev.currentTarget.getBoundingClientRect(),w=318,h=205;let left=er.left-mr.left+er.width/2,top=er.top-mr.top-h-15;if(top<12)top=er.bottom-mr.top+14;left=Math.max(w/2+12,Math.min(mr.width-w/2-12,left));top=Math.max(12,Math.min(mr.height-h-12,top));t.style.left=left+'px';t.style.top=top+'px';t.classList.add('show');
+  const mr=m.getBoundingClientRect(),er=marker.getBoundingClientRect(),w=318,h=205;let left=er.left-mr.left+er.width/2,top=er.top-mr.top-h-15;if(top<12)top=er.bottom-mr.top+14;left=Math.max(w/2+12,Math.min(mr.width-w/2-12,left));top=Math.max(12,Math.min(mr.height-h-12,top));t.style.left=left+'px';t.style.top=top+'px';t.classList.add('show');
 };
 geOpenAirportDetail217=function(code,marker){
   document.querySelectorAll('.airport-marker').forEach(x=>x.classList.remove('active'));marker?.classList.add('active');
@@ -6505,7 +6768,7 @@ showAirportTooltip=function(ev,code){
     </div>
     ${vendorNames.length?`<div class="tooltip-vendor-v244">${vendorNames.slice(0,3).map(v=>`<b>${geEsc(v)}</b>`).join('')}</div>`:''}`;
 
-  const mr=m.getBoundingClientRect(),er=ev.currentTarget.getBoundingClientRect(),w=318,h=220;
+  const mr=m.getBoundingClientRect(),er=marker.getBoundingClientRect(),w=318,h=220;
   let left=er.left-mr.left+er.width/2,top=er.top-mr.top-h-15;
   if(top<12)top=er.bottom-mr.top+14;
   left=Math.max(w/2+12,Math.min(mr.width-w/2-12,left));
@@ -6572,7 +6835,7 @@ function geMapResetView(){
   document.querySelector('.map-region-cards button:first-child')?.classList.add('active');
   document.querySelector('.map-chip[data-region=""]')?.classList.add('active');
   hideAirportTooltip();
-  renderAirportMapMarkers();
+  window.renderAirportMapMarkers?.();
   geApplyMapView();
 }
 function filterAirportMap(region,button){
@@ -6583,7 +6846,7 @@ function filterAirportMap(region,button){
   button?.classList.add('active');
   document.querySelectorAll(`.map-chip[data-region="${window.GE_MAP_REGION}"]`).forEach(x=>x.classList.add('active'));
   hideAirportTooltip();
-  renderAirportMapMarkers();
+  window.renderAirportMapMarkers?.();
   geApplyMapView();
   geUpdateMapRegionCounts();
 }
@@ -6906,7 +7169,7 @@ renderInitiatives=function(){
   const rows=currentInitiativeRows().filter(geInitiativeScopedV224);
   const t=document.getElementById('initRows');
   if(t)t.innerHTML=rows.length?rows.map(geInitiativeCardV247).join(''):'<div class="initiative-empty-v246">Belum ada inisiatif pada filter ini.</div>';
-  renderInitiativeCharts(rows);
+  renderInitiativeCharts();
 };
 
 /* ---------- Space & Building: Provider, Start/End, currency-aware annual ---------- */
@@ -7074,11 +7337,7 @@ openPlanningRecordModal=function(type,id=null){
 };
 
 function gePromoteModalViewportV248(modal){
-  if(!modal)return;
-  if(modal.parentElement!==document.body)document.body.appendChild(modal);
-  [['position','fixed'],['inset','0'],['width','100vw'],['height','100vh'],['margin','0'],['z-index','2147483000'],['align-items','center'],['justify-content','center'],['padding','24px'],['box-sizing','border-box']].forEach(([k,v])=>modal.style.setProperty(k,v,'important'));
-  const card=modal.firstElementChild;if(!card)return;
-  [['position','relative'],['inset','auto'],['transform','none'],['margin','auto'],['width','min(1180px, calc(100vw - 48px))'],['max-width','calc(100vw - 48px)'],['max-height','calc(100vh - 48px)'],['overflow','auto'],['box-sizing','border-box']].forEach(([k,v])=>card.style.setProperty(k,v,'important'));
+  if(modal)window.GEOverlayV30?.promote(modal);
 }
 
 savePlanningRecord=function(){
@@ -7530,6 +7789,12 @@ currentInitiativeRows=function(){
  const focused=window.GE_INITIATIVE_FOCUS_ID_R65;
  if(focused)return (data.initiatives||[]).filter(x=>String(x.id)===String(focused));
  let rows=(data.initiatives||[]).slice();
+ const period=window.geSelectedPortalPeriod?.();
+ if(period)rows=rows.filter(row=>{
+  const first=Number(row.planningYear||row.year||String(row.startDate||row.periodStart||'').match(/20\d{2}/)?.[0]||0);
+  const last=Number(String(row.endDate||row.periodEnd||'').match(/20\d{2}/)?.[0]||first);
+  if(!first)return true;return first<=period.end&&Math.max(last,first)>=period.start;
+ });
  const page=document.getElementById('journeyPageValue')?.value||window.GE_ACTIVE_JOURNEY||'';
  if(page)rows=rows.filter(x=>geMatchesJourneyV252(x,page));
  const q=(document.getElementById('q')?.value||'').toLowerCase();
@@ -7537,7 +7802,7 @@ currentInitiativeRows=function(){
  return rows.filter(x=>{
    const status=typeof geInitiativeStatusV246==='function'?geInitiativeStatusV246(x):'';
    return (!q||`${x.name||''} ${geTPsV252(x).join(' ')} ${x.airport||''} ${x.pic||''}`.toLowerCase().includes(q)) &&
-    (!ft||geTPsV252(x).includes(ft))&&(!fs||status===fs)&&(!fp||x.pic===fp);
+    (!ft||geTPsV252(x).includes(ft)||geTPsV252(x).some(initiativeAllTouchpoints))&&(!fs||status===fs)&&(!fp||x.pic===fp);
  });
 }
 
@@ -8759,34 +9024,31 @@ const val=(row,map,...names)=>{for(const n of names){const i=map[norm(n)];if(i!=
 function dateVal(v){if(!v)return'';if(/^\d{4}-\d{2}-\d{2}$/.test(v))return v;if(/^\d+(\.\d+)?$/.test(v)&&Number(v)>20000)return new Date((Number(v)-25569)*86400000).toISOString().slice(0,10);return v}
 function notice(t,m,type='success'){if(typeof geStorageNoticeV223==='function')geStorageNoticeV223(t,m,type);else alert(t+'\n'+m)}
 
-/* Preserve the exact V2.54.4 initiative card rendering; only add Priority filtering. */
 function installInitiativeControls(){
- const host=$('initRows');if(!host)return;
- const title=document.querySelector('.initiative-list-title-v226');
- if(title&&!$('geV2554UploadInitiative')){
-   const add=title.querySelector('button[onclick*="openInitiativeModalV224"]');
-   const wrap=document.createElement('div');wrap.className='v2554-initiative-actions';
-   wrap.innerHTML=`<a class="ge-btn secondary compact-btn" href="assets/Template_Bulk_Import_Initiative_V2_55.xlsx" download>Template Excel</a><button class="ge-btn secondary compact-btn" type="button" id="geV2554UploadInitiative">Upload Data</button>`;
-   if(add){add.parentNode.insertBefore(wrap,add);wrap.appendChild(add)}
-   else title.appendChild(wrap);
-   $('geV2554UploadInitiative').onclick=openBulk;
+ const actions=$('initiativeListActions');
+ if(actions&&window.gxCanManage?.()&&!$('geV2554UploadInitiative')){
+   const template=document.createElement('a');
+   template.className='ge-btn secondary';
+   template.href='assets/Template_Bulk_Import_Initiative_V2_55.xlsx';
+   template.download='';
+   template.textContent='Template Excel';
+   const upload=document.createElement('button');
+   upload.type='button';
+   upload.id='geV2554UploadInitiative';
+   upload.className='ge-btn secondary';
+   upload.textContent='Upload Data';
+   upload.onclick=openBulk;
+   actions.prepend(template,upload);
  }
- if(title&&!document.getElementById('geInitiativeViewToggle')){const v=document.createElement('div');v.id='geInitiativeViewToggle';v.className='ge-initiative-view-toggle';v.innerHTML='<button type="button" class="active" data-view="grid">Grid</button><button type="button" data-view="list">List</button>';title.appendChild(v);v.querySelectorAll('button').forEach(b=>b.onclick=()=>{window.GE_INITIATIVE_VIEW=b.dataset.view;v.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===b));renderInitiatives();});}
- const grid=document.querySelector('.initiative-filter-grid-v226');
- if(grid&&!$('geV2554Priority')){
-   const csv=[...grid.querySelectorAll('button')].find(b=>/(Unduh CSV|Unduh Data)/i.test(b.textContent||''));
-   const s=document.createElement('select');s.id='geV2554Priority';s.innerHTML='<option value="">Semua Priority</option><option>Critical</option><option>High</option><option>Normal</option><option>Low</option>';s.onchange=()=>renderInitiatives();
-   if(csv)grid.insertBefore(s,csv);else grid.appendChild(s);
+ const filters=document.querySelector('.initiative-list-filters');
+ if(filters&&!$('geV2554Priority')){
+   const priority=document.createElement('select');
+   priority.id='geV2554Priority';
+   priority.setAttribute('aria-label','Priority');
+   priority.innerHTML='<option value="">Semua Priority</option><option>Critical</option><option>High</option><option>Normal</option><option>Low</option>';
+   priority.onchange=()=>window.renderInitiatives?.();
+   filters.insertBefore(priority,$('geInitiativeViewToggle'));
  }
- const baseRender=window.renderInitiatives;
- window.renderInitiatives=function(){
-   refreshInitiativeFilters();
-   let rows=currentInitiativeRows().filter(geInitiativeScopedV224);
-   const p=$('geV2554Priority')?.value||'';if(p)rows=rows.filter(x=>String(x.priority||'Normal')===p);
-   const t=$('initRows');if(t){if(window.GE_INITIATIVE_VIEW==='list'&&rows.length){t.innerHTML=`<div class="ge-initiative-list"><table><thead><tr><th>Initiative</th><th>Journey</th><th>Touch Point</th><th>Station</th><th>PIC</th><th>Due</th><th>Progress</th><th>Action</th></tr></thead><tbody>${rows.map(x=>`<tr><td><b>${geEsc(x.name||'-')}</b></td><td>${geEsc(geScopesV252(x).join(', '))}</td><td>${geEsc(geTPsV252(x).join(', '))}</td><td>${geEsc(x.airport||'-')}</td><td>${geEsc(x.pic||'-')}</td><td>${geEsc(x.dueDate||'-')}</td><td>${geEsc(String(x.real||0))}% / ${geEsc(String(x.plan||0))}%</td><td>${geInitiativeListActions(x)}</td></tr>`).join('')}</tbody></table></div>`;}else t.innerHTML=rows.length?rows.map(geInitiativeCardV251).join(''):'<div class="initiative-empty-v246">Belum ada inisiatif pada filter ini.</div>';}
-   renderInitiativeCharts(rows);
- };
- renderInitiatives();
 }
 
 /* Draft button: use the established V2.54.2 draft list. */
@@ -8855,39 +9117,152 @@ async function parseSheet(file,n){
 }
 function objectRows(rows,type){
  if(!rows.length)return[];const map={};(rows[0]||[]).forEach((h,i)=>map[norm(h)]=i);
- return rows.slice(1).filter(r=>r.some(v=>String(v||'').trim())).map((r,i)=>{
-   if(type==='init'){const code=val(r,map,'Initiative Code'),name=val(r,map,'Initiative Name','Inisiatif'),js=split(val(r,map,'Journey Scope')),tp=split(val(r,map,'Touch Point'));return {row:i+2,errors:[!code&&'Initiative Code',!name&&'Initiative Name'].filter(Boolean),obj:{initiativeCode:code,name,planningYear:num(val(r,map,'Planning Year')),journeyScopes:js,journey:js[0]||'',touchpoints:tp,tp:tp[0]||'',airport:val(r,map,'Station').toUpperCase(),pic:val(r,map,'PIC'),priority:val(r,map,'Priority')||'Normal',strategicPriority:val(r,map,'Strategic Priority')||'No',portfolio:val(r,map,'Portfolio'),startDate:dateVal(val(r,map,'Start Date')),endDate:dateVal(val(r,map,'End Date')),dueDate:dateVal(val(r,map,'Due Date')),plan:num(val(r,map,'Target %','Target (%)')),estimatedCost:num(val(r,map,'Estimated Cost')),budget:num(val(r,map,'Budget')),status:val(r,map,'Status')||'Not Started',targetText:val(r,map,'Target Output','Target / Output'),remark:val(r,map,'Remark'),publicationStatus:'published'}}}
-   const obj={initiativeCode:val(r,map,'Initiative Code'),title:val(r,map,'Milestone Name'),milestoneType:(val(r,map,'Milestone Type')||'Single Due Date').toLowerCase().includes('period')?'period':'date',startDate:dateVal(val(r,map,'Start Date')),endDate:dateVal(val(r,map,'End Date')),dueDate:dateVal(val(r,map,'Due Date')),pic:val(r,map,'PIC'),status:val(r,map,'Status')||'Not Started',estimatedCost:num(val(r,map,'Estimated Cost')),remark:val(r,map,'Remark')};return {row:i+2,errors:[!obj.initiativeCode&&'Initiative Code',!obj.title&&'Milestone Name',!obj.dueDate&&'Due Date'].filter(Boolean),obj};
+ return rows.slice(1).map((values,index)=>({values,row:index+2})).filter(({values})=>values.some(v=>String(v||'').trim())).map(({values:r,row})=>{
+   if(type==='init'){const code=val(r,map,'Initiative Code'),name=val(r,map,'Initiative Name','Inisiatif'),js=split(val(r,map,'Journey Scope')),tp=split(val(r,map,'Touch Point'));return {row,errors:[!code&&'Initiative Code',!name&&'Initiative Name'].filter(Boolean),obj:{initiativeCode:code,name,planningYear:num(val(r,map,'Planning Year')),journeyScopes:js,journey:js[0]||'',touchpoints:tp,tp:tp[0]||'',airport:val(r,map,'Station').toUpperCase(),pic:val(r,map,'PIC'),priority:val(r,map,'Priority')||'Normal',strategicPriority:val(r,map,'Strategic Priority')||'No',portfolio:val(r,map,'Portfolio'),startDate:dateVal(val(r,map,'Start Date')),endDate:dateVal(val(r,map,'End Date')),dueDate:dateVal(val(r,map,'Due Date')),plan:num(val(r,map,'Target %','Target (%)')),estimatedCost:num(val(r,map,'Estimated Cost')),budget:num(val(r,map,'Budget')),status:val(r,map,'Status')||'Not Started',targetText:val(r,map,'Target Output','Target / Output'),remark:val(r,map,'Remark'),publicationStatus:'published'}}}
+   const obj={initiativeCode:val(r,map,'Initiative Code'),title:val(r,map,'Milestone Name'),milestoneType:(val(r,map,'Milestone Type')||'Single Due Date').toLowerCase().includes('period')?'period':'date',startDate:dateVal(val(r,map,'Start Date')),endDate:dateVal(val(r,map,'End Date')),dueDate:dateVal(val(r,map,'Due Date')),pic:val(r,map,'PIC'),status:val(r,map,'Status')||'Not Started',estimatedCost:num(val(r,map,'Estimated Cost')),remark:val(r,map,'Remark')};return {row,errors:[!obj.initiativeCode&&'Initiative Code',!obj.title&&'Milestone Name',!obj.dueDate&&'Due Date'].filter(Boolean),obj};
  });
 }
 let bulk={init:[],milestone:[]};
+let previewRevision=0;
+const importKey=value=>String(value||'').trim().toUpperCase();
 function ensureBulk(){
  if($('geV2554BulkModal'))return;
- document.body.insertAdjacentHTML('beforeend',`<div id="geV2554BulkModal" class="modal-backdrop"><div class="modal-card v2554-bulk-card"><button class="modal-x" type="button" id="geV2554BulkX">×</button><span class="eyebrow">BULK IMPORT INITIATIVE</span><h2>Upload CSV / Excel</h2><p class="section-subtitle">Gunakan template agar struktur Initiative dan Milestone konsisten.</p><label class="v2554-upload-box"><input id="geV2554BulkFile" type="file" accept=".xlsx,.csv"><b>Pilih file XLSX / CSV</b><span>XLSX mendukung sheet Initiatives + Milestones.</span></label><label>Mode Import<select id="geV2554Mode"><option value="upsert">Create & Update</option><option value="create">Create New Only</option><option value="update">Update Existing Only</option></select></label><div id="geV2554BulkStats" class="v2554-bulk-stats"></div><div class="v2554-preview"><table><thead><tr><th>Row</th><th>Code</th><th>Initiative</th><th>Validation</th></tr></thead><tbody id="geV2554PreviewBody"></tbody></table></div><div class="modal-actions sticky-actions"><a class="ge-btn secondary" href="assets/Template_Bulk_Import_Initiative_V2_55.xlsx" download>Download Template</a><button class="ge-btn" id="geV2554Import" disabled>Import Data</button><button class="ge-btn secondary" id="geV2554BulkClose">Close</button></div></div></div>`);
+ document.body.insertAdjacentHTML('beforeend',`<div id="geV2554BulkModal" class="modal-backdrop"><div class="modal-card v2554-bulk-card"><button class="modal-x" type="button" id="geV2554BulkX">×</button><span class="eyebrow">BULK IMPORT INITIATIVE</span><h2>Upload CSV / Excel</h2><p class="section-subtitle">Gunakan template agar struktur Initiative dan Milestone konsisten.</p><label class="v2554-upload-box"><input id="geV2554BulkFile" type="file" accept=".xlsx,.csv"><b>Pilih file XLSX / CSV</b><span>XLSX mendukung sheet Initiatives + Milestones.</span></label><label>Mode Import<select id="geV2554Mode"><option value="upsert">Create & Update</option><option value="create">Create New Only</option><option value="update">Update Existing Only</option></select></label><div id="geV2554BulkStats" class="v2554-bulk-stats" role="status"></div><div class="v2554-preview"><table><thead><tr><th>Row</th><th>Code</th><th>Initiative</th><th>Status</th></tr></thead><tbody id="geV2554PreviewBody"></tbody></table></div><div class="modal-actions sticky-actions"><a class="ge-btn secondary" href="assets/Template_Bulk_Import_Initiative_V2_55.xlsx" download>Download Template</a><button class="ge-btn" id="geV2554Import" disabled>Import Data</button><button class="ge-btn secondary" id="geV2554BulkClose">Close</button></div></div></div>`);
  $('geV2554BulkX').onclick=$('geV2554BulkClose').onclick=()=>$('geV2554BulkModal').classList.remove('show');
  $('geV2554BulkFile').onchange=e=>previewBulk(e.target.files[0]);
  $('geV2554Import').onclick=doImport;
 }
 function openBulk(){ensureBulk();$('geV2554BulkModal').classList.add('show')}
 async function previewBulk(file){
- if(!file)return;
+ const revision=++previewRevision;
+ bulk={init:[],milestone:[]};
+ $('geV2554Import').disabled=true;
+ $('geV2554PreviewBody').replaceChildren();
+ if(!file){$('geV2554BulkStats').textContent='';return;}
+ $('geV2554BulkStats').textContent='Membaca file…';
  try{
    const ext=file.name.split('.').pop().toLowerCase();let a,b=[];
    if(ext==='csv')a=geParseCSVV223(await file.text());else{a=await parseSheet(file,1);b=await parseSheet(file,2)}
+   if(revision!==previewRevision)return;
    bulk={init:objectRows(a,'init'),milestone:objectRows(b,'mile')};
-   const errors=[...bulk.init,...bulk.milestone].reduce((n,x)=>n+x.errors.length,0);
-   $('geV2554BulkStats').innerHTML=`<span><b>${bulk.init.length}</b> Initiative</span><span><b>${bulk.milestone.length}</b> Milestone</span><span><b>${errors}</b> Error</span>`;
-   $('geV2554PreviewBody').innerHTML=bulk.init.map(x=>`<tr><td>${x.row}</td><td>${esc(x.obj.initiativeCode)}</td><td>${esc(x.obj.name)}</td><td>${x.errors.length?'Lengkapi '+esc(x.errors.join(', ')):'Valid'}</td></tr>`).join('');
+   const codes=new Map();
+   for(const entry of bulk.init){
+     const code=importKey(entry.obj.initiativeCode);
+     if(!codes.has(code))codes.set(code,[]);
+     codes.get(code).push(entry);
+   }
+   for(const [code,entries] of codes){
+     if(code&&entries.length>1)entries.forEach(entry=>entry.errors.push('Kode inisiatif muncul lebih dari sekali'));
+   }
+   for(const milestone of bulk.milestone){
+     const code=importKey(milestone.obj.initiativeCode);
+     const related=codes.get(code);
+     if(!related?.length)milestone.errors.push('Kode inisiatif tidak ada pada lembar Initiatives');
+     if(milestone.errors.length)related?.forEach(entry=>entry.errors.push('Periksa Milestone baris '+milestone.row));
+   }
+   const errors=[...bulk.init,...bulk.milestone].filter(entry=>entry.errors.length).length;
+   const orphan=bulk.milestone.find(entry=>!codes.has(importKey(entry.obj.initiativeCode)));
+   $('geV2554BulkStats').textContent=`${bulk.init.length} inisiatif · ${bulk.milestone.length} milestone · ${errors} baris perlu diperiksa`+
+     (orphan?`. Kode di Milestone baris ${orphan.row} perlu dicocokkan dengan lembar Initiatives.`:'');
+   renderImportPreview();
    $('geV2554Import').disabled=errors>0||!bulk.init.length;
- }catch(e){notice('File tidak dapat dibaca',e.message||String(e),'warning')}
+ }catch(error){
+   if(revision===previewRevision)$('geV2554BulkStats').textContent='File tidak dapat dibaca. Periksa format file dan pilih kembali.';
+ }
 }
-function doImport(){
- const mode=$('geV2554Mode').value;data.initiatives=data.initiatives||[];let created=0,updated=0,skipped=0;
- bulk.init.forEach(r=>{const o=r.obj,old=data.initiatives.find(x=>String(x.initiativeCode||'')===String(o.initiativeCode));if(old){if(mode==='create'){skipped++;return}Object.assign(old,o,{id:old.id,workflow:old.workflow||[]});updated++}else{if(mode==='update'){skipped++;return}data.initiatives.push({...o,id:Date.now()+created,workflow:[]});created++}});
- bulk.milestone.forEach(r=>{const x=data.initiatives.find(v=>String(v.initiativeCode||'')===String(r.obj.initiativeCode));if(!x)return;x.workflow=x.workflow||[];const o={...r.obj};delete o.initiativeCode;const old=x.workflow.find(w=>w.title===o.title&&w.dueDate===o.dueDate);if(old)Object.assign(old,o);else x.workflow.push(o)});
- save();$('geV2554BulkModal').classList.remove('show');if(typeof renderInitiatives==='function')renderInitiatives();notice('Import selesai',`${created} dibuat • ${updated} diperbarui • ${skipped} dilewati.`,'success');
+const importStatusLabels={
+ saved:'Tersimpan',failed:'Gagal disimpan',unconfirmed:'Belum terkonfirmasi',
+ 'not-attempted':'Belum diproses',skipped:'Dilewati sesuai mode impor',
+ unchanged:'Sudah sesuai',conflict:'Perlu diperiksa · kode sudah dipakai lebih dari sekali'
+};
+const importErrorLabels={
+ FORBIDDEN:'akses ditolak',SCOPE_FORBIDDEN:'di luar cakupan akses',HIERARCHY_FORBIDDEN:'perlu akses admin',
+ AUTH_INVALID:'sesi perlu diperiksa',AUTH_REQUIRED:'sesi perlu diperiksa',401:'sesi perlu diperiksa',
+ ALREADY_EXISTS:'kode sudah tersimpan',RECORD_CHANGED:'data berubah saat impor',
+ 5:'data tidak ditemukan',6:'data sudah ada',9:'data berubah saat impor',10:'simpan berbenturan dengan perubahan lain'
+};
+function renderImportPreview(outcomes){
+ $('geV2554PreviewBody').innerHTML=bulk.init.map(entry=>{
+   const {row,obj,errors}=entry;
+   const outcome=outcomes?.get(importKey(obj.initiativeCode));
+   const detail=outcome?.status==='failed'?importErrorLabels[outcome.code]:'';
+   const status=outcome?importStatusLabels[outcome.status]+(detail?' · '+detail:''):errors.length?errors.join('; '):'Valid';
+   return `<tr><td>${row}</td><td>${esc(obj.initiativeCode)}</td><td>${esc(obj.name)}</td><td>${esc(status)}</td></tr>`;
+ }).join('');
+ window.geEnhanceAllTables?.();
+}
+async function prepareInitiativeImport(current,mode){
+ const records=new Map(),milestones=new Map(),changes=[],outcomes=new Map();
+ for(const row of current){
+   const code=importKey(row.initiativeCode);
+   if(!records.has(code))records.set(code,[]);
+   records.get(code).push(row);
+ }
+ for(const {obj} of bulk.milestone){
+   const {initiativeCode,...milestone}=obj;
+   const code=importKey(initiativeCode);
+   if(!milestones.has(code))milestones.set(code,[]);
+   milestones.get(code).push(milestone);
+ }
+ for(const {obj} of bulk.init){
+   const code=importKey(obj.initiativeCode);
+   const existing=records.get(code)||[];
+   if(existing.length>1){outcomes.set(code,{status:'conflict'});continue;}
+   const [old]=existing;
+   if((old&&mode==='create')||(!old&&mode==='update')){outcomes.set(code,{status:'skipped'});continue;}
+   const payload={...obj};
+   const incoming=milestones.get(code)||[];
+   if(incoming.length||!old){
+     const workflow=(Array.isArray(old?.workflow)?old.workflow:[]).map(item=>({...item}));
+     for(const milestone of incoming){
+       const match=workflow.find(item=>item.title===milestone.title&&item.dueDate===milestone.dueDate);
+       if(match)Object.assign(match,milestone);
+       else workflow.push(milestone);
+     }
+     payload.workflow=workflow;
+   }
+   if(old&&Object.entries(payload).every(([key,value])=>JSON.stringify(old[key])===JSON.stringify(value))){
+     outcomes.set(code,{status:'unchanged'});continue;
+   }
+   let id=old?.id;
+   if(id==null){
+     const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(code));
+     id='initiative-import-'+[...new Uint8Array(hash)].map(byte=>byte.toString(16).padStart(2,'0')).join('');
+   }
+   changes.push({id,code,action:old?'UPDATE':'CREATE',data:payload});
+ }
+ return {changes,outcomes};
+}
+async function doImport(){
+ const button=$('geV2554Import'),mode=$('geV2554Mode'),file=$('geV2554BulkFile');
+ if(button.disabled||!window.gxCanManage?.())return;
+ button.disabled=mode.disabled=file.disabled=true;
+ $('geV2554BulkStats').textContent='Menyimpan data impor…';
+ let outcomes;
+ try{
+   outcomes=await store.importInitiatives(current=>prepareInitiativeImport(current,mode.value));
+ }catch(error){
+   const authError=[401,'AUTH_INVALID','AUTH_REQUIRED'].some(code=>code===error.status||code===error.code);
+   $('geV2554BulkStats').textContent=authError?'Data terkini belum bisa diperiksa. Periksa sesi portal sebelum mencoba kembali.':
+     'Data terkini belum bisa diperiksa. Coba lagi untuk melanjutkan impor.';
+   renderImportPreview(new Map(bulk.init.map(entry=>[importKey(entry.obj.initiativeCode),{status:'not-attempted'}])));
+   button.disabled=false;
+   return;
+ }finally{
+   mode.disabled=file.disabled=false;
+ }
+ const counts=new Map();
+ for(const {status} of outcomes.values())counts.set(status,(counts.get(status)||0)+1);
+ const summary=['saved','unchanged','failed','unconfirmed','not-attempted','skipped','conflict']
+   .filter(status=>counts.has(status)).map(status=>`${counts.get(status)} ${importStatusLabels[status].toLowerCase()}`);
+ const needsSession=[...outcomes.values()].some(outcome=>[401,'AUTH_INVALID','AUTH_REQUIRED'].includes(outcome.code)&&outcome.status!=='saved');
+ $('geV2554BulkStats').textContent=summary.join(' · ')+(needsSession?'. Periksa sesi portal sebelum mencoba kembali.':'');
+ renderImportPreview(outcomes);
+ button.disabled=![...outcomes.values()].some(result=>['failed','unconfirmed','not-attempted'].includes(result.status));
+ window.renderInitiatives?.();
 }
 
+window.geInitInitiativeBulk=installInitiativeControls;
 window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiativeControls();bindCalendar();ensureBulk();window.geV2554BindGantt?.()},80));
 })();
 
@@ -9425,9 +9800,32 @@ window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiative
     const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Template_Layanan_Lounge_Tenant_P29.csv';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(url);a.remove()},300);
   }
   window.downloadLoungeTemplateV230=downloadTemplate;
+  window.closeBulkImportV223=closeBulkImportV223;
+  window.downloadLoungeVisitorTemplateV225=downloadLoungeVisitorTemplateV225;
+  window.confirmBulkImportV243=()=>window.confirmBulkImportV231();
 
   function aliases(){
-    return Object.fromEntries(Object.entries(FIELD_HEADERS).map(([k,h])=>[k,[h,h.replaceAll(' ','_'),k]]));
+    const alternate={station:['airport','airport code','stationCode'],name:['serviceName','provider'],serviceType:['serviceCategory'],startDate:['from'],endDate:['until']};
+    return Object.fromEntries(Object.entries(FIELD_HEADERS).map(([key,label])=>[
+      key,[label,label.replaceAll(' ','_'),key,...(alternate[key]||[])]
+    ]));
+  }
+
+  async function readLoungeImport(file){
+    const schema=aliases(),required=['station','name','serviceType'];
+    const candidates=/\.csv$/i.test(file.name)
+      ? [',',';'].map(separator=>({separator,rows:null}))
+      : [{rows:await geReadTabularFileV223(file)}];
+    const text=candidates[0].rows?null:await file.text();
+    for(const candidate of candidates){
+      const rows=candidate.rows||geParseCSVV223(text,candidate.separator);
+      const header=rows.findIndex(row=>{
+        const cells=row.map(geNormalizeHeaderV223);
+        return required.every(key=>schema[key].some(alias=>cells.includes(geNormalizeHeaderV223(alias))));
+      });
+      if(header!==-1)return geRowsToObjectsV223(rows.slice(header),schema);
+    }
+    throw Error('Kolom Station/Airport, Nama Layanan/Provider, atau Jenis Layanan tidak ditemukan. Gunakan Download Template Lounge/Tenant.');
   }
   window.geP29CSVContractHeaders=()=>Object.values(FIELD_HEADERS).slice();
   window.geP29NormalizeCSVRows=(rows)=>normalizeImportRows(rows);
@@ -9438,7 +9836,7 @@ window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiative
     const scheduleValues=[r.priceEffectiveFrom,r.priceEffectiveTo,r.price,r.priceCurrency,r.priceBasis,r.priceNote].map(v=>String(v??'').trim());
     const requiredScheduleValues=scheduleValues.slice(0,4),anySchedule=scheduleValues.some(Boolean),allSchedule=requiredScheduleValues.every(Boolean);
     const raw={...r};
-    raw.station=r.station;raw.name=r.name;raw.serviceType=r.serviceType;
+    raw.station=r.station;raw.name=r.name;raw.serviceType=[...TYPE_SET].find(type=>type.toLowerCase()===String(r.serviceType||'').trim().toLowerCase())||r.serviceType;
     raw.startDate=geNormalizeDateUploadV223(r.startDate);raw.endDate=geNormalizeDateUploadV223(r.endDate);
     raw.priceSchedules=anySchedule?[{effectiveFrom:geNormalizeDateUploadV223(r.priceEffectiveFrom),effectiveTo:geNormalizeDateUploadV223(r.priceEffectiveTo),price:r.price,currency:r.priceCurrency,priceBasis:r.priceBasis,priceNote:r.priceNote}]:[];
     const check=validateInput(raw);
@@ -9506,28 +9904,30 @@ window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiative
       const dup=group&&!group.error&&existingDuplicate(group.model);if(dup)errs.push('Potential duplicate existing agreement');
       const ok=!errs.length;
       const p=m.priceSchedules?.[0];
-      return `<tr><td>${item.rowNumber}</td><td>${esc(m.airport||'-')}</td><td>${esc(m.serviceType||'-')}</td><td>${esc(m.name||'-')}</td><td>${esc(m.documentNumber||'-')}</td><td>${esc(m.startDate||'-')} — ${esc(m.endDate||'-')}</td><td>${esc(p?safePriceDisplay(p.currency,p.price):safePriceDisplay(m.currency,m.pricePerPax))}${p?`<br><small>${esc(p.effectiveFrom)} — ${esc(p.effectiveTo)}</small>`:''}</td><td><span class="ge-p29-import-status ${ok?'ok':'invalid'}">${ok?'CREATE':'INVALID'}</span></td><td>${esc(errs.join('; ')||'Ready')}</td></tr>`;
+      return `<tr><td>${item.rowNumber}</td><td>${esc(m.airport||'-')}</td><td>${esc(m.serviceType||'-')}</td><td>${esc(m.name||'-')}</td><td>${esc(m.documentNumber||'-')}</td><td>${esc(m.startDate||'-')} — ${esc(m.endDate||'-')}</td><td>${esc(p?safePriceDisplay(p.currency,p.price):safePriceDisplay(m.currency,m.pricePerPax))}${p?`<br><small>${esc(p.effectiveFrom)} — ${esc(p.effectiveTo)}</small>`:''}</td><td><span class="ge-p29-import-status ${ok?'ok':'invalid'}">${ok?'Siap diimpor':'Perlu diperbaiki'}</span></td><td>${esc(errs.join('; ')||'—')}</td></tr>`;
     }).join('');
-    return `<div class="ge-p29-import-summary"><span>Total <b>${summary.total}</b></span><span>Valid <b>${summary.valid}</b></span><span>Warnings <b>${summary.warnings}</b></span><span>Invalid <b>${summary.invalid}</b></span></div><div class="bulk-preview-table ge-p29-import-table"><table><thead><tr><th>Row</th><th>Station</th><th>Type</th><th>Provider</th><th>Agreement Number</th><th>Agreement Period</th><th>Price / Price Period</th><th>Status</th><th>Validation Message</th></tr></thead><tbody>${rows||'<tr><td colspan="9">Tidak ada data</td></tr>'}</tbody></table></div><p class="ge-p29-import-note">Import mode: CREATE-only. Baris invalid dan duplicate tidak ditulis. Baris multi-price dengan Agreement Number yang sama digabung menjadi satu Agreement dengan beberapa Price Period.</p>`;
+    return `<div class="ge-p29-import-summary"><span>Total <b>${summary.total}</b></span><span>Siap diimpor <b>${summary.valid}</b></span><span>Dilewati <b>${summary.invalid}</b></span></div><div class="bulk-preview-table ge-p29-import-table"><table><thead><tr><th>Row</th><th>Station</th><th>Type</th><th>Provider</th><th>Agreement Number</th><th>Agreement Period</th><th>Price / Price Period</th><th>Status</th><th>Validation Message</th></tr></thead><tbody>${rows||'<tr><td colspan="9">Tidak ada data</td></tr>'}</tbody></table></div><p class="ge-p29-import-note">Hanya perjanjian baru yang diimpor. Baris dengan nomor perjanjian yang sama dapat memuat beberapa periode tarif.</p>`;
   }
 
-  const originalOpen=window.openBulkImportV223;
+  const originalOpen=openBulkImportV223;
   window.openBulkImportV223=function(type){
-    if(type!=='lounge')return originalOpen?.(type);
+    GE_BULK_IMPORT_V223={type,rows:[],fileName:''};
+    if(type!=='lounge')return originalOpen(type);
     if(!canUpload())return;
     state.importRows=[];state.importGroups=[];state.importSummary=null;state.importFileName='';
     const title=document.getElementById('bulkImportTitleV223'),help=document.getElementById('bulkImportHelpV223'),file=document.getElementById('bulkImportFileV223'),preview=document.getElementById('bulkImportPreviewV223'),confirm=document.getElementById('bulkImportConfirmV223'),modal=document.getElementById('bulkImportModalV223');
-    if(title)title.textContent='Upload CSV Layanan Lounge / Tenant';if(help)help.textContent='Gunakan CSV Template P29. Parse → Normalize → Validate → Preview → Confirm → Import. Multi-price memakai satu Agreement Number pada beberapa baris.';if(file)file.value='';if(preview)preview.innerHTML='<div class="bulk-import-idle">Belum ada file dipilih.</div>';if(confirm)confirm.disabled=true;modal?.classList.add('show');
+    if(title)title.textContent='Impor Data Lounge / Tenant';if(help)help.textContent='Pilih file sesuai template, lalu periksa pratinjau sebelum menyimpan.';if(file)file.value='';if(preview)preview.innerHTML='<div class="bulk-import-idle">Belum ada file dipilih.</div>';if(confirm)confirm.disabled=true;modal?.classList.add('show');
   };
 
   window.previewBulkImportV223=async function(file){
+    if(GE_BULK_IMPORT_V223.type!=='lounge')return previewBulkImportV223(file);
     if(!file)return;
     const preview=document.getElementById('bulkImportPreviewV223'),confirm=document.getElementById('bulkImportConfirmV223');
     if(!canUpload())return;
-    preview.innerHTML='<div class="bulk-import-loading">Membaca, menormalisasi, dan memvalidasi file…</div>';if(confirm)confirm.disabled=true;
+    preview.innerHTML='<div class="bulk-import-loading">Memeriksa file…</div>';if(confirm)confirm.disabled=true;
     try{
-      const raw=await geReadTabularFileV223(file);
-      const rows=geRowsToObjectsV223(raw,aliases());
+      const rows=await readLoungeImport(file);
+      if(!rows.length)throw Error('Template belum memiliki baris data. Isi minimal satu baris sebelum upload.');
       const result=normalizeImportRows(rows);const summary=buildImportPreview(result);
       state.importRows=result.normalized;state.importGroups=result.groups;state.importSummary=summary;state.importFileName=file.name;
       preview.innerHTML=previewMarkup(result,summary);
@@ -9535,31 +9935,42 @@ window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiative
     }catch(e){preview.innerHTML=`<div class="bulk-import-error">File tidak dapat diproses. ${esc(e.message||String(e))}</div>`;state.importRows=[];state.importGroups=[];if(confirm)confirm.disabled=true;}
   };
 
-  const originalConfirm=window.confirmBulkImportV231;
+  const originalConfirm=confirmBulkImportV231;
   window.confirmBulkImportV231=async function(){
-    if(state.importFileName){
-      if(!canUpload())return;
-      const groups=state.importGroups.filter(g=>g.model&&!g.error&&!existingDuplicate(g.model));
-      if(!groups.length){notice('Import Tidak Dilakukan','Tidak ada baris valid yang siap dibuat. Periksa duplicate atau validation error.','warning');return;}
-      let added=0,failures=0;data.lounges=data.lounges||[];
-      groups.forEach(g=>{try{data.lounges.push({...g.model,id:Date.now()+added+Math.floor(Math.random()*10000),no:'',documentName:'',documentKey:''});added++}catch(e){failures++}});
-      if(added){
-        try{
-          data.auditLogs=Array.isArray(data.auditLogs)?data.auditLogs:[];
-          const u=typeof geSession==='function'?geSession():{};
-          data.auditLogs.unshift({id:Date.now()+Math.floor(Math.random()*10000),timestamp:new Date().toISOString(),username:u?.username||'system',name:u?.name||u?.username||'System',role:u?.role||'System',action:'Bulk Import',module:'Lounge/Tenant Planning',object:`${added} Agreement`,detail:`P29 CSV CREATE-only • file ${state.importFileName} • ${state.importSummary?.total||0} rows • ${state.importSummary?.invalid||0} blocked`});
-        }catch(e){}
-        save();
-        try{if(window.GEStore?.flush)await window.GEStore.flush();}
-        catch(e){console.error('[Lounge/Tenant Import Firestore]',e);notice('Import Gagal',`Agreement belum tersimpan ke Firestore. ${e?.message||String(e)}`,'error');return;}
-      }
-      document.getElementById('bulkImportModalV223')?.classList.remove('show');fillAirportSelects?.();renderLounges?.();renderLoungeCardsV237?.();renderLoungePriceSummaryV243?.();
-      notice('Import Selesai',`${added} Agreement dibuat • ${failures} gagal • ${state.importSummary?state.importSummary.invalid:'-'} baris tidak diimport karena validation/duplicate.` ,added?'success':'warning');
-      state.importFileName='';return;
+    const batch=GE_BULK_IMPORT_V223;
+    if(batch.type!=='lounge'||batch.pending)return originalConfirm();
+    if(!state.importFileName||!canUpload())return;
+    const groups=state.importGroups.filter(group=>group.model&&!group.error&&!existingDuplicate(group.model));
+    if(!groups.length){notice('Import Tidak Dilakukan','Tidak ada agreement valid untuk disimpan.','warning');return}
+    const records=groups.map(group=>({...group.model,id:crypto.randomUUID(),no:'',documentName:'',documentKey:''}));
+    const persist=async()=>{
+      store.save({lounges:records});
+      await store.flush();
+      const existing=new Set(data.lounges.map(row=>String(row.id)));
+      data.lounges.push(...records.filter(row=>!existing.has(row.id)));
+    };
+    const skipped=state.importSummary?.invalid||0;
+    if(await geConfirmImportPersistedV240({added:groups.length},`${groups.length} perjanjian tersimpan · ${skipped} baris dilewati.`,persist)){
+      state.importFileName='';
+      window.dispatchEvent(new CustomEvent('gx-data-hydrated',{detail:{collections:['lounges']}}));
     }
-    return originalConfirm?.();
   };
 
+  window.geOpenLoungePlanningImport=()=>{
+    if(!canUpload())throw new Error('Anda tidak memiliki izin untuk mengimpor Lounge / Tenant.');
+    let layer=document.getElementById('bulkImportModalV223');
+    if(!layer){
+      layer=document.createElement('div');
+      layer.id='bulkImportModalV223';
+      layer.className='modal-backdrop';
+      layer.innerHTML='<div class="modal-card"><div class="lounge-import-heading"><h2 id="bulkImportTitleV223"></h2><p id="bulkImportHelpV223"></p></div><div class="lounge-import-file"><label for="bulkImportFileV223">File CSV atau XLSX</label><a href="templates/Template_Layanan_Lounge_Tenant_P29.csv" download>Unduh template</a><input type="file" id="bulkImportFileV223" accept=".xlsx,.csv"></div><div id="bulkImportPreviewV223" aria-live="polite"></div><div class="modal-actions"><button type="button" class="ge-btn" data-cancel>Batal</button><button type="button" class="ge-btn primary" id="bulkImportConfirmV223" disabled>Impor Data</button></div></div>';
+      document.querySelector('#cleanPageOutlet').appendChild(layer);
+      layer.querySelector('[data-cancel]').onclick=closeBulkImportV223;
+      layer.querySelector('#bulkImportFileV223').onchange=e=>window.previewBulkImportV223(e.currentTarget.files[0]);
+      layer.querySelector('#bulkImportConfirmV223').onclick=()=>window.confirmBulkImportV231();
+    }
+    window.openBulkImportV223('lounge');
+  };
   window.downloadLoungesCSV=function(){
     const lines=[Object.values(FIELD_HEADERS).map(csvCell).join(',')];
     filteredRows().forEach(x=>{
@@ -9639,7 +10050,8 @@ window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiative
   if(typeof saveInitiativeProgressV224==='function') window.saveInitiativeProgressV224=saveInitiativeProgressV224;
   if(typeof saveInitiativeStepV224==='function') window.saveInitiativeStepV224=saveInitiativeStepV224;
   if(typeof saveInitiativeV224==='function') window.saveInitiativeV224=saveInitiativeV224;
-  if(typeof setJourneyFilter==='function') window.setJourneyFilter=setJourneyFilter;
+  window.setJourneyFilter=setJourneyFilter;
+  window.geFilterInitiativeTouchpoint=geFilterInitiativeTouchpoint;
   if(typeof closeInboxDetail==='function') window.closeInboxDetail=closeInboxDetail;
   if(typeof openInboxDetail==='function') window.openInboxDetail=openInboxDetail;
   if(typeof openSupportConversation==='function') window.openSupportConversation=openSupportConversation;
@@ -9682,6 +10094,11 @@ window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiative
   window.renderLounges=renderLounges;
   if(typeof changeLoungeCardPageV237==='function') window.changeLoungeCardPageV237=changeLoungeCardPageV237;
   if(typeof renderLoungeVisitors==='function') window.renderLoungeVisitors=renderLoungeVisitors;
+window.renderPurchaseV232=renderPurchaseV232;
+window.geInitLoungeAccessPage=()=>{
+  fillAirportSelects();
+  refreshScanLoungeOptions();
+};
   if(typeof renderPlanningDocuments==='function') window.renderPlanningDocuments=renderPlanningDocuments;
   if(typeof geRenderPlanningPage==='function') window.geRenderPlanningPage=geRenderPlanningPage;
   if(typeof renderPlanningOverview==='function') window.renderPlanningOverview=renderPlanningOverview;
@@ -9703,7 +10120,26 @@ window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiative
   if(typeof openInitiativeTimelineV224==='function') window.openInitiativeTimelineV224=openInitiativeTimelineV224;
   if(typeof installInitiativeControls==='function') window.installInitiativeControls=installInitiativeControls;
   if(typeof geInitAirportV214==='function') window.geInitAirportV214=geInitAirportV214;
-  if(typeof renderAirports==='function') window.renderAirports=renderAirports;
+  Object.assign(window,{
+    renderAirports,openAirportModalV231,closeAirportModalV231,saveAirportV231,deleteAirportV231,geSetAirportStatus,
+    viewArticle,deleteArticle,deleteAnnouncement,deleteFaq,editNews,deleteNews,
+    pmMoveSectionR2,pmDeleteAssetR2,resetUserPassword,
+    renderPersonnel,openPersonnelModal,closePersonnelModal,savePersonnel,deletePersonnel,
+    addPortalDocument,addInitiativeDocument,renderDocumentsAdmin,deletePortalDocument,
+    showBOPlanningPanel,openAirportSystemModalV231,closeAirportSystemModalV231,saveAirportSystemV231,deleteAirportSystemV231,
+    openStationMaterialModalV231,closeStationMaterialModalV231,saveStationMaterialV231,deleteStationMaterialV231,
+    showGasoPanelV231,openGasoModalV231,closeGasoModalV231,saveGasoV231,deleteGasoV231,
+    renderGasoMasterV231,renderGasoSupportV231,renderGasoPlanningV231,renderGasoAllV231,
+    refreshScanLoungeOptions,verifyBoardingPass,startCameraScanner,toggleManualEntry,resetLoungeAccess,
+    stopCameraScanner,verifyManualPassenger,closeEligibilityModal,geEligibilityCategoryChanged,geEligibilityCategoryChangedV236,
+    recordEligibleVisitor,recordEligibleVisitorV236,
+    openPurchaseModalV232,closePurchaseModalV232,refreshPurchaseServicesV232,savePurchaseV232,deletePurchaseV232,
+    openVisitorReportModalV239,closeVisitorReportModalV239,visitorReportTypeChangedV239,downloadVisitorReportPDFV239,
+    geVisitorEdit,geVisitorDelete,openInitiativeDocumentV227,deleteInitiativeDocumentV227,
+    downloadLoungeVisitorsCSV,closeVisitorEditModal,saveVisitorEditModal,visitorEditCategoryChanged,
+    openFlightModalV236,deleteFlightV236,
+    geCloseMoveModal218,geMoveViewDetail218,geMoveConfirm218,geCancelRelocate218,geOpenMoveModal218
+  });
   if(typeof renderAirportMapMarkers==='function') window.renderAirportMapMarkers=renderAirportMapMarkers;
   if(typeof filterAirportMap==='function') window.filterAirportMap=filterAirportMap;
   if(typeof showAirportTooltip==='function') window.showAirportTooltip=showAirportTooltip;
@@ -9716,7 +10152,61 @@ window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{installInitiative
   if(typeof renderStationMaterials==='function') window.renderStationMaterials=renderStationMaterials;
   if(typeof renderAirportSystems==='function') window.renderAirportSystems=renderAirportSystems;
   if(typeof submitArticleProposal==='function') window.submitArticleProposal=submitArticleProposal;
+  (function bindInitiativeView(){
+  const esc=geEsc;
+/* Final canonical Initiative Grid/List view. This wrapper is intentionally last so legacy exports cannot overwrite it. */
+const initRender=window.renderInitiatives;
+function geInitiativeArray(value){if(Array.isArray(value))return value.map(v=>String(v||'').trim()).filter(Boolean);return String(value||'').split(/[|,;]/).map(v=>v.trim()).filter(Boolean)}
+function geInitiativeFilterValue(id){const el=document.getElementById(id);return String(el?.value||'').trim()}
+
+function geInitiativeCanUpdate(){const s=window.gxGetSession?.()||{},role=String(s.role||'');return /^(Super Admin|Super Administrator)$/i.test(role)||['Admin','Editor'].includes(String(s.accessLevel||''))}
+function geInitiativeCanDelete(){const s=window.gxGetSession?.()||{},role=String(s.role||'');return /^(Super Admin|Super Administrator)$/i.test(role)||String(s.accessLevel||'')==='Admin'}
+function geInitiativeListActions(x){const id=String(x?.id||'');const parts=[];if(geInitiativeCanUpdate())parts.push(`<button type="button" class="ge-btn compact" onclick="window.openInitiativeModalV224?.('${id}')">Update</button>`);if(geInitiativeCanDelete())parts.push(`<button type="button" class="ge-btn danger compact" onclick="window.deleteInitiativeV224?.('${id}')">Delete</button>`);if(!parts.length&&typeof geInitiativeManageButtonsV224==='function')return geInitiativeManageButtonsV224(x);return `<div class="planning-row-actions ge-initiative-actions">${parts.join('')}</div>`}
+function geInitiativeFilteredRows({points,rows}=initiativeSummaryModel()){
+  const q=geInitiativeFilterValue('q').toLowerCase();
+  const tp=geInitiativeFilterValue('ft');
+  const point=points.find(item=>initiativeKey(item.name)===initiativeKey(tp));
+  const ach=geInitiativeFilterValue('fs'),priority=geInitiativeFilterValue('geV2554Priority');
+  const focused=window.GE_INITIATIVE_FOCUS_ID_R65;
+  return rows.filter(row=>{
+    if(focused&&String(row.id)!==String(focused))return false;
+    const stations=initiativeValues(row.stations?.length?row.stations:row.airport);
+    const hay=[row.name,row.pic,row.remark,row.status,row.priority,...initiativeTouchpoints(row),...initiativeJourneys(row),...stations].join(' ').toLowerCase();
+    return (!q||hay.includes(q))&&(!tp||initiativeMatchesTouchpoint(row,point))&&
+      (!ach||achievement(row.plan,row.real)===ach)&&(!priority||String(row.priority||'Normal')===priority);
+  });
+}
+function syncInitiativeView(){
+  document.querySelectorAll('#geInitiativeViewToggle [data-view]').forEach(button=>{
+    const selected=button.dataset.view===(window.GE_INITIATIVE_VIEW||'grid');
+    button.classList.toggle('active',selected);
+    button.setAttribute('aria-pressed',String(selected));
+  });
+}
+if(initRender)window.renderInitiatives=function(){
+  const host=document.getElementById('initRows');
+  if(!host||!document.getElementById('initiativeListSection'))return initRender.apply(this,arguments);
+  const model=initiativeSummaryModel();
+  refreshInitiativeTouchpointOptions(model.points);
+  const rows=geInitiativeFilteredRows(model),view=window.GE_INITIATIVE_VIEW||'grid';
+  syncInitiativeView();
+  if(view!=='list'){
+    host.innerHTML=rows.length&&typeof geInitiativeCardV251==='function'?rows.map(geInitiativeCardV251).join(''):'<div class="initiative-empty-v246">Belum ada inisiatif pada filter ini.</div>';
+    if(typeof renderInitiativeCharts==='function')renderInitiativeCharts(model);
+    return;
+  }
+  host.innerHTML=`<div class="ge-initiative-list"><table class="lounge-reference-table ge-initiative-table" data-initiative-list><thead><tr><th>Initiative</th><th>Journey</th><th>Touch Point</th><th>Station</th><th>PIC</th><th>Due</th><th>Progress</th><th data-table-no-sort>Action</th></tr></thead><tbody>${rows.map(x=>`<tr><td><b>${esc(x.name||'-')}</b></td><td>${esc(geInitiativeArray(x.journeyScopes?.length?x.journeyScopes:x.journey).join(', ')||'-')}</td><td>${esc(geInitiativeArray(x.touchpoints?.length?x.touchpoints:(x.tp||x.touchpoint)).join(', ')||'-')}</td><td>${esc(geInitiativeArray(x.stations?.length?x.stations:x.airport).join(', ')||'-')}</td><td>${esc(x.pic||'-')}</td><td>${esc(x.dueDate||x.endDate||'-')}</td><td>${Number(x.real||0)}% / ${Number(x.plan||0)}%</td><td>${geInitiativeListActions(x)}</td></tr>`).join('')||'<tr><td colspan="8">Belum ada inisiatif pada filter ini.</td></tr>'}</tbody></table></div>`;
+  if(typeof renderInitiativeCharts==='function')renderInitiativeCharts(model);
+  setTimeout(()=>window.geEnhanceAllTables?.(),0);
+};
+
+window.geSetInitiativeView=function(view){
+  window.GE_INITIATIVE_VIEW=view==='list'?'list':'grid';
+  window.renderInitiatives?.();
+};
+  })();
   window.addEventListener=_w;
+  window.geReadTabularFileV223=geReadTabularFileV223;
   document.addEventListener=_d;
 })();
 
@@ -9790,8 +10280,17 @@ window.geFocusInitiativeR65=function(id,milestone){
  const typedId=typeof row.id==='number'?Number(row.id):row.id;window.openInitiativeTimelineV224?.(typedId);
  if(milestone!==null&&milestone!==undefined&&milestone!==''){const index=Number(milestone),step=row.workflow?.[index],cards=document.querySelectorAll('#initiativeTimelineModalV224 .timeline-card-v224');if(!step||!cards[index]){notice.textContent='Milestone yang dituju tidak tersedia dalam Initiative ini.';return}cards[index].style.outline='3px solid #287db5';cards[index].scrollIntoView({block:'center'})}
 };
-window.geInitInitiativeCanonical=function(){const params=new URLSearchParams(location.search),explicit=String(params.get('journey')||'').trim();window.GE_ACTIVE_JOURNEY=explicit;document.querySelectorAll('.journey-tab[data-journey]').forEach(btn=>btn.classList.toggle('active',String(btn.dataset.journey||'')===explicit));window.renderInitiatives?.();queueMicrotask(()=>window.renderInitiatives?.())};window.setJourneyFilter=function(journey){window.GE_ACTIVE_JOURNEY=String(journey||'');document.querySelectorAll('.journey-tab[data-journey]').forEach(btn=>btn.classList.toggle('active',String(btn.dataset.journey||'')===window.GE_ACTIVE_JOURNEY));window.renderInitiatives?.()};
-window.geFilterInitiativeTouchpoint=tp=>{location.href='app.html?page=calendar&view=gantt&touchpoint='+encodeURIComponent(tp||'')};
+window.geInitInitiativeCanonical=function(){
+ const panel=document.getElementById('initiativeCharts');
+ if(!panel)return;
+ const explicit=new URLSearchParams(location.search).get('journey')||'';
+ const buttons=[...document.querySelectorAll('.journey-tab[data-journey]')];
+ const journey=panel.dataset.initialized?buttons.find(button=>button.classList.contains('active'))?.dataset.journey:explicit;
+ if(!panel.dataset.initialized)window.GE_INITIATIVE_FOCUS_ID_R65='';
+ panel.dataset.initialized='true';
+ window.setJourneyFilter(buttons.some(button=>button.dataset.journey===journey)?journey:'');
+};
+
 
 let geGanttSortStateR13={key:'title',dir:1};
 let geGanttStateR16={scale:'default',from:'',to:'',filters:{journey:'',touchpoint:'',station:'',pic:'',kind:'',initiative:''}};
@@ -9867,7 +10366,14 @@ window.geInitCalendarWorkspaceCanonical=function(){const tabs=document.getElemen
 
 function airports(){return (store().airports||[]).map(a=>({...a,code:String(a.code||a.airportCode||a.iata||a.stationCode||'').trim().toUpperCase(),city:a.city||a.location||a.airportCity||'',airportName:a.airportName||a.name||a.airport||'',wilayah:a.wilayah||a.serviceRegion||a.networkRegion||a.region||'Domestik',status:a.status||'Active',lat:Number(a.lat??a.latitude??a.coordinates?.lat??0),lon:Number(a.lon??a.lng??a.longitude??a.coordinates?.lng??0)})).filter(a=>a.code)}
 function bindMapInteraction(){const map=document.getElementById('interactiveMap'),stage=document.getElementById('mapStage');if(!map||!stage||map.dataset.r11Bound)return;map.dataset.r11Bound='1';let scale=1,panX=0,panY=0,drag=false,sx=0,sy=0,px=0,py=0;const apply=()=>{stage.style.transformOrigin='50% 50%';stage.style.transform=`translate(${panX}px,${panY}px) scale(${scale})`;const l=document.getElementById('mapZoomLabel');if(l)l.textContent=`Operational Network • ${Math.round(scale*100)}%`};map.addEventListener('wheel',e=>{e.preventDefault();scale=Math.max(1,Math.min(3.5,scale*(e.deltaY<0?1.1:.9)));apply()},{passive:false});map.addEventListener('pointerdown',e=>{if(e.target.closest('button,.airport-marker,.map-tooltip,.map-control-rail-v216'))return;drag=true;sx=e.clientX;sy=e.clientY;px=panX;py=panY;map.setPointerCapture?.(e.pointerId);map.classList.add('is-panning-r11')});map.addEventListener('pointermove',e=>{if(!drag)return;panX=px+(e.clientX-sx);panY=py+(e.clientY-sy);apply()});const end=e=>{drag=false;map.classList.remove('is-panning-r11');try{map.releasePointerCapture?.(e.pointerId)}catch{}};map.addEventListener('pointerup',end);map.addEventListener('pointercancel',end);map.addEventListener('dblclick',e=>{if(e.target.closest('button,.airport-marker'))return;scale=1;panX=panY=0;apply()});apply()}
-window.geInitAirportCanonical=function(){window.GE_MAP_REGION='';window.GEActiveMapRegion='';document.querySelectorAll('.map-chip,.map-region-cards button').forEach(x=>x.classList.remove('active'));document.querySelector('.map-region-cards button:first-child')?.classList.add('active');const rows=(typeof geAirportVisibleRows==='function'?geAirportVisibleRows():airports()),d=store();d.airports=rows;window.renderAirportMapMarkers?.();window.geUpdateMapRegionCounts?.();bindMapInteraction();const body=document.getElementById('rows'),stats=document.getElementById('netStats');if(stats)stats.innerHTML=`<div class="ge-card ge-stat"><small>Stations / Airports</small><b>${rows.length}</b></div><div class="ge-card ge-stat"><small>Active</small><b>${rows.filter(x=>x.status==='Active').length}</b></div><div class="ge-card ge-stat"><small>Regions</small><b>${new Set(rows.map(x=>x.wilayah).filter(Boolean)).size}</b></div>`;if(body)body.innerHTML=rows.length?rows.map(a=>`<tr><td><b>${esc(a.code)}</b></td><td>${esc(a.airportName||'-')}</td><td>${esc(a.city||'-')}</td><td>${esc(a.wilayah||'-')}</td><td>${esc(a.gm||a.generalManager||'-')}</td><td>-</td><td>-</td><td>${esc(a.status)}</td></tr>`).join(''):'<tr><td colspan="8">Data Airport/Station belum tersedia.</td></tr>'};
+window.geInitAirportCanonical=function(){
+ const layer=document.getElementById('airportMarkerLayer');
+ if(!layer)return;
+ if(!layer.dataset.stationMapBound){
+   window.GE_MAP_REGION='';
+   window.GEActiveMapRegion='';
+ }
+const rows=window.geAirportRows?.()||airports();window.renderAirportMapMarkers?.();window.geUpdateMapRegionCounts?.();bindMapInteraction();const body=document.getElementById('rows'),stats=document.getElementById('netStats');if(stats)stats.innerHTML=`<div class="ge-card ge-stat"><small>Stations / Airports</small><b>${rows.length}</b></div><div class="ge-card ge-stat"><small>Active</small><b>${rows.filter(x=>x.status==='Active').length}</b></div><div class="ge-card ge-stat"><small>Regions</small><b>${new Set(rows.map(x=>x.wilayah).filter(Boolean)).size}</b></div>`;if(body)body.innerHTML=rows.length?rows.map(a=>`<tr><td><b>${esc(a.code)}</b></td><td>${esc(a.airportName||'-')}</td><td>${esc(a.city||'-')}</td><td>${esc(a.wilayah||'-')}</td><td>${esc(a.gm||a.generalManager||'-')}</td><td>-</td><td>-</td><td>${esc(a.status)}</td></tr>`).join(''):'<tr><td colspan="8">Data Airport/Station belum tersedia.</td></tr>'};
 })();
 
 
@@ -9909,23 +10415,12 @@ function bindLoungeView(){
  document.querySelectorAll('#geLoungeViewToggle [data-view]').forEach(b=>{if(b.dataset.r19)return;b.dataset.r19='1';b.onclick=()=>setLoungeView(b.dataset.view)});
  setLoungeView(window.GE_LOUNGE_VIEW||'grid');
 }
-function setInitiativeView(view){
- window.GE_INITIATIVE_VIEW=view==='list'?'list':'grid';
- const sel=byId('geInitiativeViewSelect');if(sel&&sel.value!==window.GE_INITIATIVE_VIEW)sel.value=window.GE_INITIATIVE_VIEW;
- document.querySelectorAll('#geInitiativeViewToggle button').forEach(b=>b.classList.toggle('active',b.dataset.view===window.GE_INITIATIVE_VIEW));
- if(typeof window.renderInitiatives==='function')window.renderInitiatives();
-}
-window.geSetInitiativeView=setInitiativeView;
-function bindInitiativeView(){
- const sel=byId('geInitiativeViewSelect');if(sel&&!sel.dataset.r19){sel.dataset.r19='1';sel.onchange=()=>setInitiativeView(sel.value);}
- document.querySelectorAll('#geInitiativeViewToggle button').forEach(b=>{if(b.dataset.r19)return;b.dataset.r19='1';b.onclick=()=>setInitiativeView(b.dataset.view);});
-}
 function bindPlanningActions(){
  document.querySelectorAll('button[onclick*="openPlanningRecordModal"],button[onclick*="openServiceProcurementModalV243"]').forEach(b=>{b.disabled=false;b.style.pointerEvents='auto';});
 }
-function init(){bindLoungeView();bindInitiativeView();bindPlanningActions();}
+function init(){bindLoungeView();bindPlanningActions();}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(init,80));else setTimeout(init,80);
-const mo=new MutationObserver(()=>{bindLoungeView();bindInitiativeView();bindPlanningActions();});
+const mo=new MutationObserver(()=>{bindLoungeView();bindPlanningActions();});
 if(document.body)mo.observe(document.body,{childList:true,subtree:true});else document.addEventListener('DOMContentLoaded',()=>mo.observe(document.body,{childList:true,subtree:true}));
 })();
 
@@ -9938,58 +10433,7 @@ function moveLoungePriceSummary(){const price=document.getElementById('loungePri
 const loungeRender=window.renderLounges;if(loungeRender)window.renderLounges=function(){const r=loungeRender.apply(this,arguments);moveLoungePriceSummary();setTimeout(()=>window.geEnhanceAllTables?.(),0);return r};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',moveLoungePriceSummary);else moveLoungePriceSummary();
 
-/* Final canonical Initiative Grid/List view. This wrapper is intentionally last so legacy exports cannot overwrite it. */
-const initRender=window.renderInitiatives;
-function geInitiativeArray(value){if(Array.isArray(value))return value.map(v=>String(v||'').trim()).filter(Boolean);return String(value||'').split(/[|,;]/).map(v=>v.trim()).filter(Boolean)}
-function geInitiativeFilterValue(id){const el=document.getElementById(id);return String(el?.value||'').trim()}
 
-function geInitiativeCanUpdate(){const s=window.gxGetSession?.()||{},role=String(s.role||'');return /^(Super Admin|Super Administrator)$/i.test(role)||['Admin','Editor'].includes(String(s.accessLevel||''))}
-function geInitiativeCanDelete(){const s=window.gxGetSession?.()||{},role=String(s.role||'');return /^(Super Admin|Super Administrator)$/i.test(role)||String(s.accessLevel||'')==='Admin'}
-function geInitiativeListActions(x){const id=String(x?.id||'');const parts=[];if(geInitiativeCanUpdate())parts.push(`<button type="button" class="ge-btn compact" onclick="window.openInitiativeModalV224?.('${id}')">Update</button>`);if(geInitiativeCanDelete())parts.push(`<button type="button" class="ge-btn danger compact" onclick="window.deleteInitiativeV224?.('${id}')">Delete</button>`);if(!parts.length&&typeof geInitiativeManageButtonsV224==='function')return geInitiativeManageButtonsV224(x);return `<div class="planning-row-actions ge-initiative-actions">${parts.join('')}</div>`}
-function geInitiativeJourney(){
-  const active=document.querySelector('.journey-tab.active[data-journey]');
-  const raw=String(active?.dataset?.journey||window.GE_ACTIVE_JOURNEY||'').trim();
-  return /^(semua|all)(\s+journey)?$/i.test(raw)?'':raw;
-}
-function geInitiativeFilteredRows(){
-  const d=store(),q=geInitiativeFilterValue('q').toLowerCase(),tp=geInitiativeFilterValue('ft'),ach=geInitiativeFilterValue('fs'),priority=geInitiativeFilterValue('geV2554Priority'),journeyFilter=geInitiativeJourney();
-  return (d.initiatives||[]).filter(x=>{
-    if(typeof geInitiativeScopedV224==='function'&&!geInitiativeScopedV224(x))return false;
-    const tps=geInitiativeArray(x.touchpoints?.length?x.touchpoints:(x.tp||x.touchpoint));
-    const journeys=geInitiativeArray(x.journeyScopes?.length?x.journeyScopes:x.journey);
-    const stations=geInitiativeArray(x.stations?.length?x.stations:x.airport);
-    const hay=[x.name,x.pic,x.remark,x.status,x.priority,...tps,...journeys,...stations].join(' ').toLowerCase();
-    if(q&&!hay.includes(q))return false;
-    if(tp&&!tps.some(v=>v.toLowerCase()===tp.toLowerCase()))return false;
-    if(ach&&typeof achievement==='function'&&achievement(x.plan,x.real)!==ach)return false;
-    if(priority&&String(x.priority||'Normal')!==priority)return false;
-    if(journeyFilter&&!journeys.some(v=>v.toLowerCase()===journeyFilter.toLowerCase()))return false;
-    return true;
-  });
-}
-if(initRender)window.renderInitiatives=function(){
-  const rows=geInitiativeFilteredRows(),view=window.GE_INITIATIVE_VIEW||document.getElementById('geInitiativeViewSelect')?.value||'grid',host=document.getElementById('initRows');
-  if(!host)return initRender.apply(this,arguments);
-  if(view!=='list'){
-    host.innerHTML=rows.length&&typeof geInitiativeCardV251==='function'?rows.map(geInitiativeCardV251).join(''):'<div class="initiative-empty-v246">Belum ada inisiatif pada filter ini.</div>';
-    if(typeof renderInitiativeCharts==='function')renderInitiativeCharts(rows);
-    return;
-  }
-  host.innerHTML=`<div class="ge-initiative-list"><table class="lounge-reference-table ge-initiative-table" data-initiative-list><thead><tr><th>Initiative</th><th>Journey</th><th>Touch Point</th><th>Station</th><th>PIC</th><th>Due</th><th>Progress</th><th data-table-no-sort>Action</th></tr></thead><tbody>${rows.map(x=>`<tr><td><b>${esc(x.name||'-')}</b></td><td>${esc(geInitiativeArray(x.journeyScopes?.length?x.journeyScopes:x.journey).join(', ')||'-')}</td><td>${esc(geInitiativeArray(x.touchpoints?.length?x.touchpoints:(x.tp||x.touchpoint)).join(', ')||'-')}</td><td>${esc(geInitiativeArray(x.stations?.length?x.stations:x.airport).join(', ')||'-')}</td><td>${esc(x.pic||'-')}</td><td>${esc(x.dueDate||x.endDate||'-')}</td><td>${Number(x.real||0)}% / ${Number(x.plan||0)}%</td><td>${geInitiativeListActions(x)}</td></tr>`).join('')||'<tr><td colspan="8">Belum ada inisiatif pada filter ini.</td></tr>'}</tbody></table></div>`;
-  if(typeof renderInitiativeCharts==='function')renderInitiativeCharts(rows);
-  setTimeout(()=>window.geEnhanceAllTables?.(),0);
-};
-
-window.geResetInitiativeJourneyState=function(){
-  const valid=['','Pre-Journey','Pre-Flight','Post-Flight','Post-Journey'];
-  let current=String(document.querySelector('.journey-tab.active[data-journey]')?.dataset?.journey||window.GE_ACTIVE_JOURNEY||'');
-  if(!valid.includes(current))current='';
-  window.GE_ACTIVE_JOURNEY=current;
-  document.querySelectorAll('.journey-tab').forEach(b=>b.classList.toggle('active',String(b.dataset.journey||'')===current));
-  if(!window.GE_INITIATIVE_VIEW)window.GE_INITIATIVE_VIEW='grid';
-};
-window.geSetInitiativeView=function(v){window.GE_INITIATIVE_VIEW=v;document.querySelectorAll('#geInitiativeViewToggle [data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===v));window.renderInitiatives?.()};
-setTimeout(()=>{document.querySelectorAll('#geInitiativeViewToggle [data-view]').forEach(b=>b.onclick=()=>window.geSetInitiativeView(b.dataset.view));const s=document.getElementById('geInitiativeViewSelect');if(s)s.onchange=()=>window.geSetInitiativeView(s.value)},0);
 
 /* Airport map: preserve real Firestore coordinates and provide known station coordinates only when source coordinates are absent. */
 const GEO={CGK:[-6.1256,106.6559],DPS:[-8.7482,115.1672],SUB:[-7.3798,112.7873],KNO:[3.6422,98.8853],UPG:[-5.0616,119.554],BPN:[-1.2683,116.8945],HLP:[-6.2666,106.891],YIA:[-7.9053,110.0573],BDO:[-6.9006,107.5763],KOE:[-10.1716,123.6711],AAP:[-0.3744,117.2502],BDJ:[-3.4424,114.7626],BKS:[-3.8637,102.339],PLM:[-2.8983,104.6999],PKU:[0.4608,101.4445],PDG:[-0.7869,100.2806],JOG:[-7.7882,110.4318],SRG:[-6.9707,110.3732],SOC:[-7.5161,110.7575],LOP:[-8.7573,116.2767],MDC:[1.5493,124.9263],AMQ:[-3.7103,128.0891],DJJ:[-2.5769,140.5164],TIM:[-4.5283,136.8874],SOQ:[-0.894,131.287],HKG:[22.308,113.9185],SIN:[1.3644,103.9915],KUL:[2.7456,101.7099],BKK:[13.69,100.7501],NRT:[35.772,140.3929],HND:[35.5494,139.7798],ICN:[37.4602,126.4407],SYD:[-33.9399,151.1753],MEL:[-37.669,144.841],JED:[21.6702,39.1525],MED:[24.5534,39.7051],AMS:[52.3105,4.7683]};
@@ -10013,15 +10457,30 @@ const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const db=()=>window.GEStore?.get?.()||{};
 const codeOf=x=>String(x?.code||x?.airportCode||x?.iata||x?.stationCode||x?.station||x?.airport||'').trim().toUpperCase();
 function coords(x,c){let lat=Number(x?.lat??x?.latitude??x?.coordinates?.lat),lon=Number(x?.lon??x?.lng??x?.longitude??x?.coordinates?.lng);if((!Number.isFinite(lat)||!Number.isFinite(lon)||(lat===0&&lon===0))&&GEO[c])[lat,lon]=GEO[c];return {lat,lon}}
-function rows(){const d=db(),base=[],seen=new Set();const add=x=>{const c=codeOf(x);if(!c||seen.has(c))return;const q=coords(x,c);if(!Number.isFinite(q.lat)||!Number.isFinite(q.lon))return;if(typeof window.gxAirportAllowed==='function'&&!window.gxAirportAllowed(c))return;seen.add(c);base.push({...x,code:c,lat:q.lat,lon:q.lon,city:x.city||x.location||'',airportName:x.airportName||x.name||x.airport||'',wilayah:x.wilayah||x.serviceRegion||x.networkRegion||x.region||'Domestik',status:x.status||'Active'})};(d.airports||[]).forEach(add);['lounges','serviceProcurement','stationMaterials','airportSystems','facilities','assets'].forEach(k=>(d[k]||[]).forEach(add));return base}
+function rows(){const d=db(),base=[],seen=new Set();const add=x=>{const c=codeOf(x);if(!c||seen.has(c))return;const q=coords(x,c);if(!Number.isFinite(q.lat)||!Number.isFinite(q.lon)||(q.lat===0&&q.lon===0))return;if(typeof window.gxAirportAllowed==='function'&&!window.gxAirportAllowed(c))return;seen.add(c);base.push({...x,code:c,lat:q.lat,lon:q.lon,city:x.city||x.location||'',airportName:x.airportName||x.name||x.airport||'',wilayah:x.wilayah||x.serviceRegion||x.networkRegion||x.region||'Domestik',status:x.status||'Active'})};(d.airports||[]).forEach(add);['lounges','serviceProcurement','stationMaterials','airportSystems','facilities','assets'].forEach(k=>(d[k]||[]).forEach(add));return base}
 function pos(lat,lon){return{left:(Math.max(-20,Math.min(180,lon))+20)/200*100,top:(75-Math.max(-50,Math.min(75,lat)))/125*100}}
 function controls(){const tools=document.querySelector('.map-search-tools');if(!tools)return;if(!document.getElementById('mapProviderType'))tools.insertAdjacentHTML('beforeend','<select id="mapProviderType"><option value="">Semua Service Provider</option><option value="lounge">Lounge / Tenant</option><option value="gha">Ground Handling Agent</option></select><select id="mapProviderStatus"><option value="">Semua Provider Status</option><option value="active">Active</option><option value="expired">Expired</option></select>');['mapProviderType','mapProviderStatus','mapAirportSearch','mapStatusFilter','mapPendingFilter','mapVendorFilterV244'].forEach(id=>{const e=document.getElementById(id);if(e&&!e.dataset.bound){e.dataset.bound='1';e.addEventListener(id==='mapAirportSearch'?'input':'change',render)}})}
+function providers(code){
+ const d=db(),now=new Date();
+ now.setHours(0,0,0,0);
+ const belongs=row=>[row.airport,row.station,row.stationCode,row.stations,row.stationCodes,row.code]
+  .flat().some(value=>String(value||'').trim().toUpperCase()===code);
+ function entry(row,type){
+  const end=row.endDate||row.until||row.effectiveUntil||row.agreementEnd;
+  const expired=(end&&new Date(String(end).slice(0,10)+'T23:59:59')<now)
+   ||/inactive|expired|terminate|closed|non.?active/i.test(String(row.status||row.documentStatus||''));
+  return {type,status:expired?'expired':'active',name:row.provider||row.vendor||row.name||row.serviceName||''};
+ }
+ const related=(d.serviceProcurement||[]).filter(row=>/gha|ground handling|sgha|handling/i.test(String(row.categoryService||row.serviceType||row.scope||row.name||'')));
+ return (d.lounges||[]).filter(belongs).map(row=>entry(row,'lounge'))
+  .concat([...(d.groundHandlers||[]),...related].filter(belongs).map(row=>entry(row,'gha')));
+}
 function filtered(){let a=rows(),q=(document.getElementById('mapAirportSearch')?.value||'').toLowerCase(),st=document.getElementById('mapStatusFilter')?.value||'',type=document.getElementById('mapProviderType')?.value||'',ps=document.getElementById('mapProviderStatus')?.value||'';if(q)a=a.filter(x=>[x.code,x.city,x.airportName,x.gm].join(' ').toLowerCase().includes(q));if(st)a=a.filter(x=>String(x.status)===st);const region=window.GEActiveMapRegion||'';if(region)a=a.filter(x=>String(x.wilayah)===region);const pending=document.getElementById('mapPendingFilter')?.value||'';if(pending)a=a.filter(x=>pending==='pending'?Number(x.pending||0)>0:Number(x.pending||0)===0);const vendor=document.getElementById('mapVendorFilterV244')?.value||'';if(vendor)a=a.filter(x=>providers(x.code).some(p=>p.name===vendor));if(type||ps)a=a.filter(x=>providers(x.code).some(p=>(!type||p.type===type)&&(!ps||p.status===ps)));return a}
 function markerState(x){const type=document.getElementById('mapProviderType')?.value||'',ps=document.getElementById('mapProviderStatus')?.value||'',p=providers(x.code).filter(v=>(!type||v.type===type)&&(!ps||v.status===ps));if(type||ps){if(p.some(v=>v.status==='active'))return'provider-active';if(p.some(v=>v.status==='expired'))return'provider-expired';return'provider-none'}return /inactive/i.test(String(x.status))?'airport-inactive':Number(x.pending||0)>0?'airport-pending':'airport-active'}
 function updateLegend(layer){const host=document.querySelector('.map-legend-v216');if(!host)return;const type=document.getElementById('mapProviderType')?.value||'',status=document.getElementById('mapProviderStatus')?.value||'',vendor=document.getElementById('mapVendorFilterV244')?.value||'',counts={};layer.querySelectorAll('.airport-map-marker').forEach(m=>{for(const c of ['provider-active','provider-expired','provider-none','airport-active','airport-pending','airport-inactive'])if(m.classList.contains(c))counts[c]=(counts[c]||0)+1});const mode=type?type==='lounge'?'Lounge / Tenant':'Ground Handling Agent':status||vendor?'Service Provider':'Airport';const meaning=type||status||vendor?[['provider-active','Provider active'],['provider-expired','Provider expired'],['provider-none','Provider belum tercatat']]:[['airport-active','Airport active'],['airport-pending','Pending contract'],['airport-inactive','Airport inactive']];host.innerHTML='<strong>'+esc(mode)+' · '+layer.querySelectorAll('.airport-map-marker').length+' marker</strong>'+meaning.filter(([c])=>counts[c]).map(([c,label])=>'<span><i class="legend-dot '+c+'"></i>'+esc(label)+' ('+counts[c]+')</span>').join('')+(layer.querySelectorAll('.airport-map-marker').length?'':'<span>Tidak ada marker sesuai filter.</span>')}
-function render(){controls();const layer=document.getElementById('airportMarkerLayer');if(!layer)return;const a=filtered();layer.innerHTML=a.map(x=>{const p=pos(x.lat,x.lon);return `<button type="button" class="airport-marker airport-marker-v214 airport-map-marker ${markerState(x)}" style="left:${p.left}%;top:${p.top}%" data-code="${esc(x.code)}"><span class="r27-marker-label">${esc(x.code)}</span><i class="r27-selected-pointer"></i></button>`}).join('');layer.dataset.markerCount=String(a.length);updateLegend(layer)}
+function render(){controls();const layer=document.getElementById('airportMarkerLayer');if(!layer)return;window.geBindStationMapMarkers?.(layer);const a=filtered();layer.innerHTML=a.map(x=>{const p=pos(x.lat,x.lon),active=layer.dataset.selectedStation===x.code;return `<button type="button" class="airport-marker airport-marker-v214 airport-map-marker ${markerState(x)}${active?' active':''}" aria-pressed="${active}" aria-label="Buka detail stasiun ${esc(x.code)}" style="left:${p.left}%;top:${p.top}%" data-code="${esc(x.code)}"><span class="r27-marker-label">${esc(x.code)}</span><i class="r27-selected-pointer"></i></button>`}).join('');layer.dataset.markerCount=String(a.length);updateLegend(layer)}
 window.renderAirportMapMarkers=render;window.geAirportRows=rows;window.addEventListener('gx-data-background-refresh',render);
-const boot=()=>{controls();render();setTimeout(render,250);setTimeout(render,1200)};if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+
 })();
 
 
@@ -10048,7 +10507,7 @@ function title42(x,k){if(k==='system')return x.systemName||x.system||x.provider|
 function sub42(x,k){if(k==='contract')return [x.provider||x.vendor,x.effectiveUntil||x.until||x.endDate].filter(Boolean).join(' • ');if(k==='people')return [x.position||x.role,x.unit||x.organization].filter(Boolean).join(' • ');return [x.provider||x.vendor,x.status||x.documentStatus].filter(Boolean).join(' • ')}
 function geMapImages42(x){const raw=[...(Array.isArray(x?.images)?x.images:[]),...(Array.isArray(x?.photos)?x.photos:[]),...(Array.isArray(x?.imageUrls)?x.imageUrls:[]),...(Array.isArray(x?.photoUrls)?x.photoUrls:[])];return raw.map(v=>typeof v==='string'?{url:v,key:'',name:''}:{url:v?.url||v?.src||v?.dataUrl||'',key:v?.key||v?.fileKey||'',name:v?.name||''}).filter(v=>v.url||v.key)}
 function geMapCanPhoto42(){const s=window.gxGetSession?.()||{};return ['Super Admin','Super Administrator'].includes(String(s.role||''))||s.role==='Admin BO'||String(s.accessLevel||'')==='Admin'}
-window.geMapOpenGallery42=function(urls,index=0){urls=Array.isArray(urls)?urls:[];if(!urls.length)return;let i=Math.max(0,Math.min(Number(index)||0,urls.length-1));let d=document.getElementById('geMapGallery42');if(!d){d=document.createElement('dialog');d.id='geMapGallery42';d.className='ge-map-gallery';document.body.appendChild(d)}const draw=()=>{d.innerHTML=`<button class="ge-dialog-close" type="button" data-close>×</button><button class="ge-gallery-nav prev" type="button" data-prev ${urls.length<2?'hidden':''}>‹</button><img src="${esc42(urls[i])}" alt="Service photo"><button class="ge-gallery-nav next" type="button" data-next ${urls.length<2?'hidden':''}>›</button><div class="ge-gallery-count">${i+1} / ${urls.length}</div>`;d.querySelector('[data-close]').onclick=()=>d.close();d.querySelector('[data-prev]')?.addEventListener('click',()=>{i=(i-1+urls.length)%urls.length;draw()});d.querySelector('[data-next]')?.addEventListener('click',()=>{i=(i+1)%urls.length;draw()})};draw();d.showModal()}
+window.geMapOpenGallery42=function(urls,index=0){urls=Array.isArray(urls)?urls:[];if(!urls.length)return;let i=Math.max(0,Math.min(Number(index)||0,urls.length-1));let d=document.getElementById('geMapGallery42');if(!d){d=document.createElement('dialog');d.id='geMapGallery42';d.className='ge-native-dialog ge-map-gallery';d.setAttribute('aria-label','Galeri foto stasiun');document.body.appendChild(d)}const draw=()=>{d.innerHTML=`<div class="ge-native-dialog-card ge-map-gallery-card"><button class="ge-dialog-close" type="button" data-close>×</button><button class="ge-gallery-nav prev" type="button" data-prev ${urls.length<2?'hidden':''}>‹</button><img src="${esc42(urls[i])}" alt="Service photo"><button class="ge-gallery-nav next" type="button" data-next ${urls.length<2?'hidden':''}>›</button><div class="ge-gallery-count">${i+1} / ${urls.length}</div></div>`;d.querySelector('[data-close]').onclick=()=>d.close();d.querySelector('[data-prev]')?.addEventListener('click',()=>{i=(i-1+urls.length)%urls.length;draw()});d.querySelector('[data-next]')?.addEventListener('click',()=>{i=(i+1)%urls.length;draw()})};draw();d.showModal()}
 function renderPanel42(c){const x=airport42(c),sets=sets42(c),providers=provider42(c),host=document.getElementById('airportDetail');if(!host)return;const city=x.city||x.location||x.airportName||c,airport=x.airportName||x.name||x.airport||'Airport / Branch Office',cat=x.category||x.type||x.domInt||x.internationalDomestic||x.wilayah||x.region||'';const tabs=[['service','Service'],['lounge','Lounge'],['people','People'],['facility','Facility'],['system','System'],['contract','Contract']];host.innerHTML=`<div class="r42-map-detail"><div class="r42-map-head"><div><h2>${esc42(city)}</h2><p>${esc42(airport)}${cat?` • ${esc42(cat)}`:''}</p></div><a class="r42-station360" href="app.html?page=station-360&station=${encodeURIComponent(c)}">Station 360</a></div><div class="r42-map-label">VENDOR / PROVIDER</div><div class="r42-provider-chips">${providers.length?providers.slice(0,5).map(n=>`<span>${esc42(n)}</span>`).join(''):'<span class="muted">Belum ada provider</span>'}</div><div class="r42-map-tabscroll"><div class="r42-map-tabs">${tabs.map(([k,l],i)=>`<button type="button" class="${i?'':'active'}" data-r42-tab="${k}"><span>${l}</span><b>${sets[k].length}</b></button>`).join('')}</div></div><div class="r42-map-tabbody"></div></div>`;
  const body=host.querySelector('.r42-map-tabbody');
  const draw=k=>{const rows=sets[k]||[];body.innerHTML=rows.length?rows.map((r,ri)=>{const imgs=geMapImages42(r),canPhoto=geMapCanPhoto42()&&['service','lounge','facility'].includes(k),first=imgs[0];return `<div class="r42-map-item"><small>${esc42(k.toUpperCase())}</small><b>${esc42(title42(r,k))}</b>${sub42(r,k)?`<span>${esc42(sub42(r,k))}</span>`:''}${imgs.length?`<button class="ge-map-thumb" type="button" data-img-index="${ri}" aria-label="Open ${esc42(title42(r,k))} photo gallery"><img ${first?.url?`src="${esc42(first.url)}"`:''} data-map-photo-key="${esc42(first?.key||'')}" alt="${esc42(first?.name||title42(r,k)+' photo')}" loading="lazy"><em>${imgs.length>1?imgs.length+' photos':'View photo'}</em></button>`:''}${canPhoto?`<button class="ge-btn compact secondary ge-map-photo-upload" type="button" data-map-photo-upload data-kind="${esc42(k)}" data-index="${ri}">+ Upload Photo</button>`:''}</div>`}).join(''):'<div class="r42-map-empty">No data available.</div>';
@@ -10059,12 +10518,62 @@ function renderPanel42(c){const x=airport42(c),sets=sets42(c),providers=provider
  };
  const first='service';draw(first);host.querySelectorAll('[data-r42-tab]').forEach(b=>b.onclick=()=>{host.querySelectorAll('[data-r42-tab]').forEach(v=>v.classList.toggle('active',v===b));draw(b.dataset.r42Tab)})}
 
+function hover42(ev,c,marker=ev.currentTarget){
+ const x=airport42(c),sets=sets42(c),providers=provider42(c),t=document.getElementById('mapTooltip'),map=document.getElementById('interactiveMap');if(!t||!map||!marker)return;
+ const city=x.city||x.location||x.airportName||c,airport=x.airportName||x.name||x.airport||'',status=x.status||'Active';
+ const mr=map.getBoundingClientRect(),er=marker.getBoundingClientRect();
+ t.innerHTML=`<div class="r42-hover-head"><div><b>${esc42(c)} — ${esc42(city)}</b><small>${esc42(airport)}</small></div><span class="${String(status).toLowerCase()==='active'?'active':'inactive'}">${esc42(status)}</span></div><div class="r42-hover-grid"><div><small>Service</small><b>${sets.service.length}</b></div><div><small>Lounge</small><b>${sets.lounge.length}</b></div><div><small>Facility</small><b>${sets.facility.length}</b></div><div><small>System</small><b>${sets.system.length}</b></div></div>${providers.length?`<div class="r42-hover-provider">${esc42(providers[0])}${providers.length>1?` <span>+${providers.length-1}</span>`:''}</div>`:''}`;
+ const width=Math.min(330,Math.max(260,map.clientWidth*.28)),gap=16;
+ const ratioX=mr.width/Math.max(map.clientWidth,1),ratioY=mr.height/Math.max(map.clientHeight,1);
+ // Tooltip is absolutely positioned in the map, and its CSS translates X by -50%.
+ t.style.width=width+'px';t.classList.add('show','r42-tooltip');
+ const height=t.offsetHeight;
+ const markerW=er.width/ratioX,markerH=er.height/ratioY;
+ const cx=(er.left-mr.left)/ratioX+markerW/2,cy=(er.top-mr.top)/ratioY+markerH/2;
+ const side=cx+width+gap<map.clientWidth-12?'right':cx-width-gap>12?'left':'center';
+ let center=side==='right'?cx+gap+markerW/2+width/2:side==='left'?cx-gap-markerW/2-width/2:cx;
+ center=Math.max(width/2+12,Math.min(map.clientWidth-width/2-12,center));
+ let top=cy-height/2;
+ if(side==='center')top=cy-height-gap>12?cy-height-gap:cy+gap;
+ top=Math.max(12,Math.min(map.clientHeight-height-12,top));
+ // Never cover the selected marker, even near the edge.
+ if(Math.abs(center-cx)<width/2+markerW/2+gap && top<cy+markerH/2 && top+height>cy-markerH/2){
+  top=cy-height-gap>12?cy-height-gap:cy+gap;
+  top=Math.max(12,Math.min(map.clientHeight-height-12,top));
+ }
+ t.style.left=center+'px';t.style.top=top+'px';
+}
+
+function hide42(){const t=document.getElementById('mapTooltip');t?.classList.remove('show','r42-tooltip')}
 window.showAirportTooltip=hover42;window.hideAirportTooltip=hide42;
-function bind42(){const layer=document.getElementById('airportMarkerLayer');if(!layer)return;layer.querySelectorAll('.airport-map-marker').forEach(m=>{if(m.dataset.r42Bound)return;m.dataset.r42Bound='1';m.addEventListener('mouseenter',e=>hover42(e,m.dataset.code));m.addEventListener('mouseleave',hide42);m.addEventListener('click',()=>{document.querySelectorAll('#airportMarkerLayer .airport-map-marker').forEach(x=>x.classList.remove('active'));m.classList.add('active');setTimeout(()=>renderPanel42(m.dataset.code),0)})})}
-const prev42=window.renderAirportMapMarkers;if(prev42&&!prev42.__r42){const w=function(){const v=prev42.apply(this,arguments);bind42();return v};w.__r42=true;window.renderAirportMapMarkers=w}
-function boot42(){bind42();const layer=document.getElementById('airportMarkerLayer');if(layer)new MutationObserver(bind42).observe(layer,{childList:true})}
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(boot42,150));else setTimeout(boot42,150);
+window.geBindStationMapMarkers=function(layer){
+ if(!layer||layer.dataset.stationMapBound)return;
+ layer.dataset.stationMapBound='true';
+ function stationMarker(event){return event.target.closest?.('.airport-map-marker[data-code]');}
+ layer.addEventListener('click',event=>{
+   const marker=stationMarker(event);
+   if(!marker)return;
+   layer.dataset.selectedStation=marker.dataset.code;
+   for(const button of layer.querySelectorAll('.airport-map-marker')){
+     const active=button===marker;
+     button.classList.toggle('active',active);
+     button.setAttribute('aria-pressed',String(active));
+   }
+   hide42();
+   renderPanel42(marker.dataset.code);
+ });
+ layer.addEventListener('pointerover',event=>{
+   const marker=stationMarker(event);
+   if(marker&&!marker.contains(event.relatedTarget))hover42(event,marker.dataset.code,marker);
+ });
+ layer.addEventListener('pointerout',event=>{
+   const marker=stationMarker(event);
+   if(marker&&!marker.contains(event.relatedTarget))hide42();
+ });
+};
 })();
+
+document.addEventListener('ge-dashboard-period-change',()=>{if(document.getElementById('initRows'))window.renderInitiatives?.()});
 
 /* Initiative hydration guard: render immediately and again when cached/background data arrives. */
 (function(){
@@ -10077,6 +10586,5 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 /* canonical action renderer compatibility token: typeof geInitiativeManageButtonsV224==='function'?geInitiativeManageButtonsV224(x):'' */
 
 
-try{if(typeof geReadTabularFileV223==='function')window.geReadTabularFileV223=geReadTabularFileV223}catch(_e){}
 /* Canonical Planning Workspace route bridge. */
-(function(){'use strict';function route(){return new URLSearchParams(location.search).get('page')||''}function initLoungeRoute(){if(route()!=='lounge-list')return;const title=document.querySelector('#cleanPageOutlet .lounge-master-page-head h1');if(title){title.textContent='Lounge/Tenant Planning';title.dataset.subpageTitle='1'}try{window.geInitLoungeP29?.()}catch(e){console.error('[Lounge canonical init]',e)}const add=document.getElementById('loungeAddAction');if(add){add.disabled=false;add.onclick=e=>{e.preventDefault();window.openLoungeAddModalV230?.()}}document.querySelectorAll('#geLoungeViewToggle [data-view]').forEach(btn=>{btn.onclick=e=>{e.preventDefault();window.geSetLoungeView?.(btn.dataset.view)}})}window.geInitLoungeRouteCanonical=initLoungeRoute;const mo=new MutationObserver(()=>initLoungeRoute());if(document.body)mo.observe(document.body,{childList:true,subtree:true});setTimeout(initLoungeRoute,0)})();
+(function(){'use strict';function route(){return new URLSearchParams(location.search).get('page')||''}function initLoungeRoute(){if(route()!=='lounge-list')return;const title=document.querySelector('#cleanPageOutlet .lounge-master-page-head h1');if(title){title.textContent='Lounge/Tenant Planning';title.dataset.subpageTitle='1'}try{window.geInitLoungeP29?.()}catch(e){console.error('[Lounge canonical init]',e)}const add=document.getElementById('loungeAddAction');if(add){add.disabled=false;add.onclick=e=>{e.preventDefault();window.openLoungeAddModalV230?.()}}document.querySelectorAll('#geLoungeViewToggle [data-view]').forEach(btn=>{btn.onclick=e=>{e.preventDefault();window.geSetLoungeView?.(btn.dataset.view)}})}window.geInitLoungeRouteCanonical=initLoungeRoute;})();

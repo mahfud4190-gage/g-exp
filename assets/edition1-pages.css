@@ -1,3 +1,23 @@
 /* Edition 1 replacement pages: presentation only. Business data never lives here. */
 .e1-top{z-index:1000}.e1-data-status{margin:12px 0;padding:8px 12px;border:1px solid rgba(0,0,0,.12);border-radius:8px;background:rgba(255,255,255,.8);font-size:12px}.e1-data-status[data-error="1"]{border-color:#b42318;color:#b42318;background:#fff5f4}.e1-top .brand{min-width:0}.e1-mobile-nav-open .side{transform:translateX(0)}
 @media(max-width:900px){.e1-top .session-tools{display:none}.e1-top .brand h1{font-size:13px}.e1-top .brand p{font-size:10px}.side{z-index:1200}.e1-mobile-nav-open:after{content:'';position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:1100}.e1-mobile-nav-open .side{box-shadow:0 12px 32px rgba(0,0,0,.3)}}
+
+/* Initiative summary and list */
+.initiative-summary{display:grid;gap:16px;margin:0 0 24px;padding:20px}
+.initiative-section-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.initiative-section-header h2,.initiative-section-header h3,.initiative-section-header p{margin:0}
+.initiative-section-header .section-subtitle{margin-top:4px}
+#initiativeListSection{scroll-margin-top:calc(var(--ge-top-h, 72px) + 16px)}
+#initiativeListSection>.initiative-section-header{margin-bottom:12px}
+.initiative-toolbar,.initiative-list-filters,.initiative-journey-options{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.initiative-list-filters{margin-bottom:14px}
+.initiative-list-filters>input{flex:2 1 200px;min-width:0}
+.initiative-list-filters>select{flex:1 1 145px;min-width:0}
+.initiative-list-filters>.ge-view-toggle{margin-inline-start:auto}
+.initiative-journey-options>.journey-tab{padding:7px 14px;min-height:36px;border-radius:8px;transform:none}
+.initiative-progress-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%, 200px),1fr));gap:12px}
+.initiative-progress-grid .radial-card{padding:12px;box-shadow:none}
+.initiative-progress-grid .radial-chart{width:108px;height:108px}
+.initiative-progress-grid .radial-card[aria-pressed="true"]{border-color:#287db5;background:#eef7fb}
+.initiative-progress-grid .radial-card:focus-visible{outline:2px solid #287db5;outline-offset:2px}
+.initiative-progress-empty{grid-column:1/-1;margin:0;padding:16px;color:var(--muted);background:#f4f7fa;border-radius:8px}

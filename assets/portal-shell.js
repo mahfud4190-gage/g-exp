@@ -204,15 +204,16 @@ function setupAccountControls(s){
  const notice=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
  const notificationUnread=x=>(x.notificationStatus||x.status||'Unread')==='Unread';
  const notificationTarget=x=>{const ref=x.referenceId||x.relatedId||'';if(x.destination)return x.destination;if(x.relatedType==='contactMessages')return `app.html?page=admin&support=${encodeURIComponent(ref)}`;if(['Initiative','Milestone'].includes(x.referenceType))return `app.html?page=inisiatif&initiative=${encodeURIComponent(ref)}${x.milestoneIndex!==undefined&&x.milestoneIndex!==''?'&milestone='+encodeURIComponent(x.milestoneIndex):''}`;return `app.html?page=admin&inbox=${encodeURIComponent(x.id)}`};
- const renderNotifications=()=>{const rows=notifications(),unread=rows.filter(notificationUnread).length;if(nb)nb.hidden=!rows.length;if(document.getElementById('geMenuNotifications'))document.getElementById('geMenuNotifications').hidden=!rows.length;if(!rows.length)np?.classList.remove('open');if(badge){badge.textContent=unread>99?'99+':String(unread);badge.hidden=!unread}if(!list)return;list.style.maxHeight='60vh';list.style.overflowY='auto';list.innerHTML=rows.length?rows.map(x=>`<button type="button" class="ge-notify-item" data-notify-id="${notice(x.id)}"><b>${notice(x.subject||x.title||x.type||'Notification')}</b><span>${notice(x.message||x.detail||'')}</span></button>`).join(''):'<div class="ge-notify-empty">No notifications available.</div>';
+ const renderNotifications=()=>{const rows=notifications(),unread=rows.filter(notificationUnread).length;if(nb)nb.hidden=!rows.length;if(document.getElementById('geMenuNotifications'))document.getElementById('geMenuNotifications').hidden=!rows.length;// Opening the panel never acknowledges unread notifications.if(badge){badge.textContent=unread>99?'99+':String(unread);badge.hidden=!unread}if(!list)return;list.style.maxHeight='60vh';list.style.overflowY='auto';list.innerHTML=rows.length?rows.map(x=>`<button type="button" class="ge-notify-item" data-notify-id="${notice(x.id)}"><b>${notice(x.subject||x.title||x.type||'Notification')}</b><span>${notice(x.message||x.detail||'')}</span></button>`).join(''):'<div class="ge-notify-empty">No notifications available.</div>';
  list.querySelectorAll('[data-notify-id]').forEach(b=>b.onclick=async()=>{const x=rows.find(v=>String(v.id)===b.dataset.notifyId);if(!x)return;const dest=notificationTarget(x);if(notificationUnread(x)){try{await window.GEStore.markInboxRead(x.id,'notification');renderNotifications()}catch(err){renderNotifications();const warning=document.createElement('p');warning.setAttribute('role','alert');warning.className='ge-notify-error';warning.textContent='Status notifikasi belum tersimpan: '+(err.message||err);list.prepend(warning);return}}(window.gePortalNavigate?window.gePortalNavigate(dest):location.assign(dest))})};
  const closeAll=()=>{up?.classList.remove('open');np?.classList.remove('open');umb?.setAttribute('aria-expanded','false')};
+ const closeOutside=event=>{if(event.target.closest?.('#geNotifyPop,#geNotifyBtn,#geUserPop,#geUserMenuBtn'))return;closeAll()};
  umb?.addEventListener('click',e=>{e.stopPropagation();np?.classList.remove('open');up?.classList.toggle('open');umb.setAttribute('aria-expanded',up.classList.contains('open')?'true':'false')});
- nb?.addEventListener('click',async e=>{e.stopPropagation();up?.classList.remove('open');np?.classList.toggle('open');try{await window.GEStore?.hydrate?.(['inbox'])}catch(err){console.warn('[Notifications]',err)}renderNotifications()});
+ nb?.addEventListener('click',async e=>{e.stopPropagation();up?.classList.remove('open');const opening=!np?.classList.contains('open');np?.classList.toggle('open',opening);if(!opening)return;if(!notifications().length){try{await window.GEStore?.hydrate?.(['inbox'])}catch(err){console.warn('[Notifications]',err)}}renderNotifications();np?.classList.add('open')});
  nc?.addEventListener('click',closeAll);
  document.getElementById('geMenuNotifications')?.addEventListener('click',e=>{e.stopPropagation();up?.classList.remove('open');np?.classList.add('open');renderNotifications()});
  document.getElementById('geLogoutBtn')?.addEventListener('click',()=>gxLogout());
- document.addEventListener('click',closeAll,{capture:true});
+ document.addEventListener('click',closeOutside,{capture:true});
  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeAll()});
  window.addEventListener('gx-inbox-ready',renderNotifications);
  renderNotifications();
@@ -220,13 +221,26 @@ function setupAccountControls(s){
 window.gePortalRefreshShellState=function(){cleanNavigation();planningTabs();sidebarToggle();};
 function setupPeriodControl(){
  const sel=document.getElementById('gePeriodSelect');if(!sel)return;
- const years=new Set();
- try{const d=window.GEStore?.get?.()||{};[...(d.initiatives||[]),...(d.budgets||[]),...(d.actuals||[]),...(d.measurements||[])].forEach(x=>{const raw=x.periodStart||x.period||x.year||x.date||x.updatedAt||x.createdAt;const m=String(raw||'').match(/(20\d{2})/);if(m)years.add(m[1])})}catch(e){}
- if(!years.size)years.add(String(new Date().getFullYear()));
- const ordered=[...years].sort((a,b)=>Number(b)-Number(a));sel.innerHTML=ordered.map(y=>`<option value="${y}">${y}</option>`).join('');
- let saved='';try{saved=(localStorage.getItem('GE_DASHBOARD_PERIOD') ?? localStorage.getItem('GE_V257_DASHBOARD_PERIOD'))||''}catch(e){};if(saved&&ordered.includes(saved))sel.value=saved;
- sel.addEventListener('change',()=>{try{localStorage.setItem('GE_DASHBOARD_PERIOD',sel.value)}catch(e){};document.dispatchEvent(new CustomEvent('ge-dashboard-period-change',{detail:{year:sel.value}}))});
+ const current=new Date().getFullYear();const years=new Set();
+ for(let year=current-2;year<=current+6;year++)years.add(year);
+ try{const d=window.GEStore?.get?.()||{};[...(d.initiatives||[]),...(d.budgets||[]),...(d.actuals||[])].forEach(row=>{
+  [row.planningYear,row.year,row.periodStart,row.periodEnd,row.startDate,row.endDate].forEach(raw=>{const m=String(raw||'').match(/20\d{2}/);if(m)years.add(Number(m[0]));});
+ })}catch(e){console.warn('[Period options]',e)}
+ const ordered=[...years].sort((a,b)=>b-a);
+ sel.replaceChildren(...ordered.map(y=>new Option(String(y),String(y))));
+ const pairFrom=ordered.filter(y=>y>=current-1&&y<=current+3).sort((a,b)=>a-b);
+ for(const first of pairFrom)for(const last of pairFrom){if(last<=first)continue;sel.add(new Option(`${first}–${last}`,`${first}:${last}`));}
+ let saved='';try{saved=localStorage.getItem('GE_DASHBOARD_PERIOD_RANGE')||localStorage.getItem('GE_DASHBOARD_PERIOD')||''}catch(e){}
+ sel.value=[...sel.options].some(option=>option.value===saved)?saved:String(current);
+ if(sel.selectedIndex<0)sel.selectedIndex=0;
+ function selectedPeriod(){const [start,end]=sel.value.split(':').map(Number);return {start,end:end||start,year:start,years:Array.from({length:(end||start)-start+1},(_,i)=>start+i),mode:end?'range':'single'}}
+ window.geSelectedPortalPeriod=selectedPeriod;
+ sel.addEventListener('change',()=>{
+  try{localStorage.setItem('GE_DASHBOARD_PERIOD_RANGE',sel.value);localStorage.setItem('GE_DASHBOARD_PERIOD',String(selectedPeriod().year))}catch(e){}
+  document.dispatchEvent(new CustomEvent('ge-dashboard-period-change',{detail:selectedPeriod()}));
+ });
 }
+
 
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{shell()}, {once:true});else shell();
 })();
