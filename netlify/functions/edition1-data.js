@@ -10,9 +10,11 @@ const COLLECTIONS = new Set([
   'inbox','auditLogs','users','lounges','standardContent','portalManager','contactMessages','guestbook',
   'airlines','groundHandlers','serviceAlignments','airportCosts','aircraftConfigs','assets','facilities',
   'monitoringTemplates','monitoringAssessments','formTemplates','monitoringWorks','formSubmissions','customerExperience','attentionSettings',
-  'referenceCatalog','requirementMatrix','stationCapabilities','planningDomains','currencies','exchangeRates'
+  'referenceCatalog','requirementMatrix','stationCapabilities','planningDomains','currencies','exchangeRates',
+  'financialBudgets','financialCostObjects','financialAllocations','financialActuals','financialAdjustments','financialCommitments','financialForecasts'
 ]);
 const DATA_GROUP_BY_COLLECTION = Object.fromEntries([...COLLECTIONS].map(name => [name, name]));
+const FINANCIAL_COLLECTIONS = new Set(['financialBudgets','financialCostObjects','financialAllocations','financialActuals','financialAdjustments','financialCommitments','financialForecasts']);
 const METADATA_COLLECTIONS = new Set(['standardContent','portalManager','attentionSettings']);
 function dataRef(db, collection, id) {
   const group = DATA_GROUP_BY_COLLECTION[collection] || collection;
@@ -36,7 +38,7 @@ function isExternalActor(actor){
 }
 function ownsRecord(actor,row){return [row?.ownerUserId,row?.createdBy,row?.actorId,row?.userId].filter(Boolean).map(String).includes(String(actor?.id||''));}
 const MODULE_BY_COLLECTION = {
-  initiatives:'initiatives', projectEvents:'calendar', inbox:'inbox', airports:'data', personnel:'data',
+  initiatives:'initiatives', financialBudgets:'planning',financialCostObjects:'planning',financialAllocations:'planning',financialActuals:'planning',financialAdjustments:'planning',financialCommitments:'planning',financialForecasts:'planning', projectEvents:'calendar', inbox:'inbox', airports:'data', personnel:'data',
   lounges:'planning', loungeVisitors:'lounge-visitor', loungePurchases:'lounge-purchase', flightSchedule:'lounge-flights',
   stationMaterials:'planning', boSpaces:'planning', serviceProcurement:'planning', airportSystems:'planning',
   gasoMaster:'planning', gasoServiceSupport:'planning', gasoPlanningService:'planning', documents:'planning',
@@ -67,11 +69,13 @@ function canRead(actor,c){
   // Active internal users read business collections; station scope is enforced after read.
   // permissions/tabs govern page/navigation, not whether a visible page can hydrate its own data.
   if(c==='users' || c==='auditLogs' || c==='portalManager') return canModule(actor,c);
+  if(FINANCIAL_COLLECTIONS.has(c) && isExternalActor(actor))return false;
   if(isExternalActor(actor)) return canModule(actor,c);
   return true;
 }
 function canWrite(actor,c){
   if (!active(actor)) return false;
+  if(FINANCIAL_COLLECTIONS.has(c) && isExternalActor(actor))return false;
   if (c==='requirementMatrix' || c==='stationCapabilities') return actor.role==='Super Admin'||(['Head Office','GE Team','Ground Experience Team'].includes(actor.role)&&actor.accessLevel==='Admin');
   if(c==='attentionSettings') return actor.role==='Super Admin'||(['Head Office','GE Team','Ground Experience Team'].includes(actor.role)&&actor.accessLevel==='Admin');
   if (c==='users') return actor.role==='Super Admin' || (['Head Office','GE Team','Ground Experience Team'].includes(actor.role) && actor.accessLevel==='Admin');
@@ -178,6 +182,7 @@ async function readCollection(db,actor,c){
     rows=rows.map(x=>({...x,createdByAccessLevel:creators.get(String(x.createdBy))?.accessLevel||x.createdByAccessLevel||'',createdByRole:creators.get(String(x.createdBy))?.role||x.createdByRole||''}));
   }
   if(c!=='inbox' && c!=='contactMessages' && c!=='users' && c!=='auditLogs' && !(['initiatives','projectEvents'].includes(c)&&isExternalActor(actor))) rows=rows.filter(x=>inScope(actor,x));
+  if(FINANCIAL_COLLECTIONS.has(c) && allowedStations(actor))rows=rows.filter(x=>stationsOf(x).length>0?inScope(actor,x):String(x.createdBy||x.ownerUserId||'')===String(actor.id));
   return rows;
 }
 function cleanId(id){ const s=String(id||'').trim(); if(!s||s.length>200) throw Object.assign(new Error('Invalid document id.'),{statusCode:400,code:'INVALID_ID'}); return s; }
@@ -195,6 +200,7 @@ async function writeOne(db,actor,collection,action,id,raw,{initiativeImport=fals
   if(collection==='formSubmissions' && !isOperationalAdmin(actor) && actor.role!=='Super Admin' && action!=='CREATE') throw Object.assign(new Error('Submitted forms cannot be edited by the submitter.'),{statusCode:403,code:'SUBMISSION_IMMUTABLE'});
   const ref=dataRef(db,collection,id?cleanId(id):db.collection('portalData').doc().id);
   if(isExternalActor(actor) && !['initiatives','projectEvents'].includes(collection)) throw Object.assign(new Error(`Write access denied for ${collection}.`),{statusCode:403,code:'FORBIDDEN'});
+  if(FINANCIAL_COLLECTIONS.has(collection) && action==='DELETE')throw Object.assign(new Error('Financial records must be archived/reversed, never deleted.'),{statusCode:403,code:'FINANCIAL_DELETE_FORBIDDEN'});
   if(action==='DELETE')return db.runTransaction(async transaction=>{
     const snap=await transaction.get(ref); if(!snap.exists) return {id:ref.id,deleted:false};
     const prev=snap.data()||{}; if(collection==='touchpoints' && /(?:^|[^a-z])(nps|csi)(?:[^a-z]|$)/i.test([prev.sourceType,prev.source,prev.sourceLabel,prev.origin,prev.originSource].filter(Boolean).join(' '))) throw Object.assign(new Error('Corporate NPS/CSI touch points cannot be deleted.'),{statusCode:403,code:'TOUCHPOINT_SOURCE_PROTECTED'}); if(isExternalActor(actor)&&!ownsRecord(actor,prev)) throw Object.assign(new Error('External users can only delete their own records.'),{statusCode:403,code:'OWNERSHIP_FORBIDDEN'}); if(!isExternalActor(actor)&&!inScope(actor,prev)) throw Object.assign(new Error('Record outside account scope.'),{statusCode:403,code:'SCOPE_FORBIDDEN'});
@@ -248,6 +254,17 @@ async function writeOne(db,actor,collection,action,id,raw,{initiativeImport=fals
     }
   }
 
+  if(FINANCIAL_COLLECTIONS.has(collection)){
+    const editor=actor.role==='Super Admin'||isOperationalAdmin(actor);
+    if(!editor && ['Approved','Verified'].includes(String(data.status||'')))throw Object.assign(new Error('Approval requires authorized management.'),{statusCode:403,code:'FINANCIAL_APPROVAL_FORBIDDEN'});
+    if(!editor && existing.exists && ['Approved','Verified'].includes(String(prev.status||'')))throw Object.assign(new Error('Approved financial records require authorized management to change.'),{statusCode:403,code:'APPROVED_RECORD_PROTECTED'});
+    if(!editor && !stationsOf({...prev,...data}).length && String(data.status||'Draft')!=='Draft')throw Object.assign(new Error('Select a station before submitting this financial record.'),{statusCode:403,code:'FINANCIAL_SCOPE_REQUIRED'});
+    if(existing.exists && ['Approved','Verified'].includes(String(prev.status||'')) && String(data.status||'')==='Draft')throw Object.assign(new Error('Approved records require formal revision, not a reset to Draft.'),{statusCode:409,code:'FINANCIAL_REVISION_REQUIRED'});
+  }
+  if(collection==='referenceCatalog' && data.kind==='businessCodePrefix' && actor.role!=='Super Admin')throw Object.assign(new Error('Only Superadmin may configure reference code prefixes.'),{statusCode:403,code:'PREFIX_ADMIN_ONLY'});
+  if(collection==='financialBudgets' && ['Approved','Verified'].includes(String(data.status||''))){
+    if(!Number.isFinite(Number(data.approvedAmount??data.revisedApprovedAmount)) || !String(data.approvalReference||'').trim())throw Object.assign(new Error('Approved Budget requires amount and approval reference.'),{statusCode:400,code:'FINANCIAL_APPROVAL_INCOMPLETE'});
+  }
   if(collection==='touchpoints'&&existing.exists&&/(?:^|[^a-z])(nps|csi)(?:[^a-z]|$)/i.test([prev.sourceType,prev.source,prev.sourceLabel,prev.origin,prev.originSource].filter(Boolean).join(' '))) throw Object.assign(new Error('Corporate NPS/CSI touch points cannot be edited.'),{statusCode:403,code:'CSI_TOUCHPOINT_LOCKED'});
   if(collection==='inbox'&&action==='CREATE')data.notificationStatus='Unread';
   if(isExternalActor(actor) && existing.exists && !ownsRecord(actor,prev)) throw Object.assign(new Error('External users can only update their own records.'),{statusCode:403,code:'OWNERSHIP_FORBIDDEN'});
@@ -264,6 +281,16 @@ async function writeOne(db,actor,collection,action,id,raw,{initiativeImport=fals
   }
   if(isExternalActor(actor) && collection==='initiatives'){delete data.touchPoint;delete data.touchpoint;delete data.touchPoints;delete data.touchpoints;delete data.station;delete data.stations;data.ownerUserId=actor.id;data.visibility='EXTERNAL_PRIVATE';data.initiativeScope='GENERAL';}
   if(isExternalActor(actor) && collection==='projectEvents'){data.ownerUserId=actor.id;data.visibility='EXTERNAL_PRIVATE';}
+  if(existing.exists && collection==='financialBudgets'){
+    const tracked=['proposedAmount','approvedAmount','revisedApprovedAmount','status','fundingSource'];
+    if(tracked.some(k=>JSON.stringify(prev[k]??null)!==JSON.stringify(data[k]??null))){
+      data.revisionHistory=[...(Array.isArray(prev.revisionHistory)?prev.revisionHistory:[]),{at:new Date().toISOString(),by:String(actor.id),previous:Object.fromEntries(tracked.map(k=>[k,prev[k]??null])),next:Object.fromEntries(tracked.map(k=>[k,data[k]??null])),reference:String(data.approvalReference||'')}];
+    }else data.revisionHistory=Array.isArray(prev.revisionHistory)?prev.revisionHistory:[];
+  }
+  if(existing.exists && ['groundHandlers','serviceProcurement'].includes(collection)){
+    if(JSON.stringify(prev.priceSchedules||[])!==JSON.stringify(data.priceSchedules||[]))data.priceRevisionHistory=[...(Array.isArray(prev.priceRevisionHistory)?prev.priceRevisionHistory:[]),{at:new Date().toISOString(),by:String(actor.id),previous:prev.priceSchedules||[],agreement:String(prev.documentNumber||prev.agreement||'')}];
+    else data.priceRevisionHistory=Array.isArray(prev.priceRevisionHistory)?prev.priceRevisionHistory:[];
+  }
   const station=stationOf({...prev,...data}); if(!isExternalActor(actor) && station && !inScope(actor,collection==='flightSchedule'?{...prev,...data}:{airport:station,stationCode:station})) throw Object.assign(new Error('Station outside account scope.'),{statusCode:403,code:'SCOPE_FORBIDDEN'});
   const now=FieldValue.serverTimestamp();
   const next={...data,updatedAt:now,updatedBy:actor.id}; if(!existing.exists){next.createdAt=now;next.createdBy=actor.id;if(collection==='initiatives'){next.createdByRole=actor.role;next.createdByAccessLevel=actor.accessLevel||''}}else if(collection==='initiatives'){next.createdByRole=prev.createdByRole||'';next.createdByAccessLevel=prev.createdByAccessLevel||''}
@@ -285,8 +312,30 @@ async function writeOne(db,actor,collection,action,id,raw,{initiativeImport=fals
     await batch.commit();
     return {id:ref.id};
   }
-  await ref.set(next,{merge:action==='UPDATE'});
-  await bumpCacheVersion(db,collection);
+  // User-facing business code is assigned by the server, atomically. Technical Firestore ID stays unchanged.
+  const type=collection==='groundHandlers'?'GHA':collection==='initiatives'?'INITIATIVE':collection==='financialBudgets'?'BUDGET':collection==='financialCostObjects'?'COST_OBJECT':collection==='financialAllocations'?'ALLOCATION':collection==='financialActuals'?'ACTUAL':collection==='serviceProcurement'?String(data.planningCategoryId||data.serviceCategory||'').toUpperCase():'';
+  const defaultPrefixes={GHA:'GHA',AIRPORT_OPERATOR:'AP',CATERING:'CAT',INITIATIVE:'IN',BUDGET:'BGT',COST_OBJECT:'COST',ALLOCATION:'ALC',ACTUAL:'ACT'};
+  if(action==='CREATE' && !existing.exists && defaultPrefixes[type]){
+    const rules=await dataQuery(db,'referenceCatalog').where('kind','==','businessCodePrefix').get();
+    const config=rules.docs.map(doc=>({id:doc.id,...doc.data()})).find(row=>String(row.id).toUpperCase()===type&&row.status!=='Inactive');
+    const prefix=String(config?.prefix||defaultPrefixes[type]).replace(/[^A-Z0-9-]/gi,'').toUpperCase();
+    const digits=Math.max(2,Math.min(8,Number(config?.digits||4)));
+    const counter=db.collection('portalMetadata').doc('businessCodeCounters').collection('sequences').doc(type);
+    await db.runTransaction(async tx=>{
+      const [oldCounter,oldRecord]=await Promise.all([tx.get(counter),tx.get(ref)]);
+      if(oldRecord.exists)throw Object.assign(new Error('Record already exists.'),{statusCode:409,code:'ALREADY_EXISTS'});
+      const seq=Number(oldCounter.data()?.value||0)+1;
+      const code=prefix+'-'+String(seq).padStart(digits,'0');
+      tx.create(ref,{...next,businessCode:code});
+      tx.set(counter,{value:seq,updatedAt:now},{merge:true});
+      tx.set(db.collection('portalMetadata').doc('cacheState'),{version:FieldValue.increment(1),updatedAt:now,lastCollection:collection},{merge:true});
+    });
+  }else{
+    if(existing.exists&&prev.businessCode)next.businessCode=prev.businessCode;
+    await ref.set(next,{merge:action==='UPDATE'});
+    await bumpCacheVersion(db,collection);
+  }
+
   if(collection==='inbox' && inboxAudience.length)await Promise.all(inboxAudience.map(uid=>dataRef(db,'inbox',`${ref.id}:${uid}`).set({...next,recipientId:uid},{merge:false})));
   if(collection==='contactMessages'){
     const admin=isOperationalAdmin(actor)||actor.role==='Super Admin';
