@@ -268,3 +268,9 @@ This is the single canonical work-history file for the portal. Entries are group
 - Server scope reads `assignedStations[]` first, accepts object/string station values, falls back to legacy `airports[]`, and normalizes the `Super Administrator` role alias before authorization/scope checks.
 - Planning Workspace and Initiative keep their initial render non-blocking; Firestore revalidation events rerender their existing canonical views when records arrive.
 - Added a runtime regression test with a simulated IndexedDB empty snapshot and delayed Firestore response; it verifies that the route returns immediately and the view receives fresh records through the background-refresh event.
+
+### Planning Workspace / Region Auto-fill — Controlled Delta 01 (2026-11-22)
+- Form Add/Edit Region is now read-only and derived from the selected Station in the existing Airport Master; changing Station immediately updates its visible Region.
+- If no Airport Master region mapping exists, the form displays an unconfigured state; no guessed West/East mapping is introduced. Editing the same station preserves the existing region field when master data has no mapping, to avoid destructive migration.
+- No changes to Firestore schema, record IDs, required-field policy, tariff formulas, import templates, budget storage, or other Planning Workspace domains.
+- Budget & Cost migration deliberately deferred until BO/HO access controls and existing browser-local data migration can be verified without data loss.
