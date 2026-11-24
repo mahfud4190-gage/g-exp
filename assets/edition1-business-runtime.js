@@ -145,9 +145,18 @@ function initiativeMatchesTouchpoint(row,point){
  return points.some(name=>initiativeKey(name)===initiativeKey(point.name))||
    (points.some(initiativeAllTouchpoints)&&(!point.journeys.size||[...point.journeys].some(journey=>initiativeMatchesJourney(row,journey))));
 }
+function geInitiativeMatchesReportingPeriod(row,period){
+ if(!period)return true;
+ const planningYears=String(row.planningYear??row.year??'').match(/20\d{2}/g)||[];
+ const yearOf=value=>{const match=String(value??'').match(/20\d{2}/);return match?Number(match[0]):0};
+ const start=yearOf(row.periodStart||row.startDate)||Number(planningYears[0]||0);
+ const end=yearOf(row.periodEnd||row.endDate)||Number(planningYears[1]||planningYears[0]||0)||start;
+ if(!start&&!end)return true;
+ return Math.min(start,end)<=period.end&&Math.max(start,end)>=period.start;
+}
 function initiativeSummaryModel(){
  const period=window.geSelectedPortalPeriod?.();
- const rows=(data.initiatives||[]).filter(geInitiativeScopedV224).filter(row=>{if(!period)return true;const first=Number(row.planningYear||row.year||String(row.startDate||row.periodStart||'').match(/20\d{2}/)?.[0]||0);const last=Number(String(row.endDate||row.periodEnd||'').match(/20\d{2}/)?.[0]||first);return !first||(first<=period.end&&Math.max(last,first)>=period.start)});
+ const rows=(data.initiatives||[]).filter(geInitiativeScopedV224).filter(row=>geInitiativeMatchesReportingPeriod(row,period));
  const journey=initiativeKey(document.querySelector('.journey-tab.active[data-journey]')?.dataset.journey);
  const catalog=initiativeTouchpointCatalog(rows);
  const points=journey?catalog.filter(point=>!point.journeys.size||point.journeys.has(journey)):catalog;
@@ -7791,11 +7800,7 @@ currentInitiativeRows=function(){
  if(focused)return (data.initiatives||[]).filter(x=>String(x.id)===String(focused));
  let rows=(data.initiatives||[]).slice();
  const period=window.geSelectedPortalPeriod?.();
- if(period)rows=rows.filter(row=>{
-  const first=Number(row.planningYear||row.year||String(row.startDate||row.periodStart||'').match(/20\d{2}/)?.[0]||0);
-  const last=Number(String(row.endDate||row.periodEnd||'').match(/20\d{2}/)?.[0]||first);
-  if(!first)return true;return first<=period.end&&Math.max(last,first)>=period.start;
- });
+ if(period)rows=rows.filter(row=>geInitiativeMatchesReportingPeriod(row,period));
  const page=document.getElementById('journeyPageValue')?.value||window.GE_ACTIVE_JOURNEY||'';
  if(page)rows=rows.filter(x=>geMatchesJourneyV252(x,page));
  const q=(document.getElementById('q')?.value||'').toLowerCase();

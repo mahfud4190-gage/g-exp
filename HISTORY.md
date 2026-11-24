@@ -311,3 +311,9 @@ This is the single canonical work-history file for the portal. Entries are group
 - Updated built-in cost component and service names for Space & Building, Station Material, and Airport Systems to English **display names only**; canonical codes and stored data values are unchanged. Master Data entries maintained by users are not automatically translated or overwritten.
 - Kept Lounge-specific labels and nonfinancial input contracts unchanged; did not alter CSS, forms' field identifiers, station splitting, Firestore persistence, calculations, permissions, or import schema.
 - Scope: `assets/planning-domains.js` and existing `HISTORY.md` only. Validation: JS syntax and repository regression gate 59/59 PASS. Browser visual and live Firestore E2E tests have not been run.
+
+## G-Exp — Reporting Period selector: All Periods default (2026-11-23)
+- Replaced the long list of pre-generated year combinations in the existing header Period selector with All Periods, Single Year and Year Range modes. Start/End Year inputs appear only when needed. On each page load, All Periods is selected by default, ignoring old saved filters.
+- Initiative views use one overlap predicate for both chart summary and list filters, including records whose planningYear already contains a multi-year range. Changing the reporting filter never writes or changes initiative planning records or import data.
+- Existing dashboard change event and legacy period key remain compatible. The current choice is a UI filter only, not a business record. No Initiative Import delta is included.
+- Scope: assets/portal-shell.js, assets/edition1-business-runtime.js, assets/portal.css, and this existing HISTORY.md. No other module, Firestore document, or template changed.

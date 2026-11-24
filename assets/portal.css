@@ -5830,3 +5830,9 @@ select.ge-input,input.ge-input,.filter-grid select,.filter-grid input,#loungeAir
 #planningDialog .planning-revision-fields{margin-top:16px}
 #planningDialog .ge-p29-file-field{margin-top:14px}
 @media(max-width:680px){.planning-dialog-layer>.planning-dialog-card{width:calc(100% - 16px);max-height:calc(100% - 16px)}#planningDialog .ge-p29-form-grid,#planningDialog .ge-p29-price-row{grid-template-columns:minmax(0,1fr)}#planningDialog .ge-p29-span2{grid-column:auto}}
+
+/* G-Exp reporting period selector: compact mode and year controls. */
+html body.portal-ready.portal-shell-ready .ge-session .ge-period-filter{gap:7px;min-width:0}
+html body.portal-ready.portal-shell-ready .ge-session .ge-period-filter label{font-size:10px;color:#dbe8f7;white-space:nowrap}
+html body.portal-ready.portal-shell-ready .ge-session .ge-period-filter select{min-width:0;max-width:118px;padding-right:2px}
+html body.portal-ready.portal-shell-ready .ge-session .ge-period-filter select[hidden]{display:none}

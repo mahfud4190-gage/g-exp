@@ -186,7 +186,7 @@ async function shell(){
  refs.top.innerHTML=`<button id="mobileNavTrigger" class="mobile-nav-trigger ge-iconbtn" type="button" aria-label="Menu">☰</button>
  <div class="ge-brand-logos"><img class="garuda" src="assets/garuda-horizontal-white.png" alt="Garuda Indonesia"><img class="danantara" src="assets/danantara-white-user.png" alt="Danantara Indonesia"></div>
  <div class="ge-title"><strong>GROUND EXPERIENCE PORTAL</strong><span>${context}</span></div>
- <div class="ge-session"><label class="filter"><span>Period</span><select id="gePeriodSelect" aria-label="Period"></select></label><button class="ge-top-action ge-notify" id="geNotifyBtn" type="button" title="Notifications" aria-label="Notifications"><span class="bell-shape"></span><b class="ge-notify-badge" id="geNotifyBadge" hidden></b></button><a class="ge-top-action ge-help" href="kontak.html" title="Help" aria-label="Help">?</a><button class="ge-user-menu" id="geUserMenuBtn" type="button" aria-expanded="false" aria-haspopup="menu"><span class="avatar">${initials}</span><span class="who"><b>${s.name||s.username||'User'}</b><span>${roleLabel}</span></span></button><div class="ge-user-pop" id="geUserPop" role="menu"><a href="profile.html" role="menuitem">Profile</a><button type="button" id="geMenuNotifications" role="menuitem">Notifications</button><button type="button" id="geLogoutBtn" role="menuitem">Sign Out</button></div><div class="ge-notify-pop" id="geNotifyPop" role="dialog" aria-label="Notifications"><div class="ge-pop-head"><b>Notifications</b><button type="button" id="geNotifyClose" aria-label="Close">×</button></div><div id="geNotifyList" class="ge-notify-list"></div></div></div>`;
+ <div class="ge-session"><div class="filter ge-period-filter"><label for="gePeriodSelect">Period</label><select id="gePeriodSelect" aria-label="Period"><option value="all">All Periods</option><option value="single">Single Year</option><option value="range">Year Range</option></select><select id="gePeriodStart" aria-label="Start Year" hidden></select><select id="gePeriodEnd" aria-label="End Year" hidden></select></div><button class="ge-top-action ge-notify" id="geNotifyBtn" type="button" title="Notifications" aria-label="Notifications"><span class="bell-shape"></span><b class="ge-notify-badge" id="geNotifyBadge" hidden></b></button><a class="ge-top-action ge-help" href="kontak.html" title="Help" aria-label="Help">?</a><button class="ge-user-menu" id="geUserMenuBtn" type="button" aria-expanded="false" aria-haspopup="menu"><span class="avatar">${initials}</span><span class="who"><b>${s.name||s.username||'User'}</b><span>${roleLabel}</span></span></button><div class="ge-user-pop" id="geUserPop" role="menu"><a href="profile.html" role="menuitem">Profile</a><button type="button" id="geMenuNotifications" role="menuitem">Notifications</button><button type="button" id="geLogoutBtn" role="menuitem">Sign Out</button></div><div class="ge-notify-pop" id="geNotifyPop" role="dialog" aria-label="Notifications"><div class="ge-pop-head"><b>Notifications</b><button type="button" id="geNotifyClose" aria-label="Close">×</button></div><div id="geNotifyList" class="ge-notify-list"></div></div></div>`;
  refs.side.innerHTML=navFor(s);
  if(typeof gxApplyNavigation==='function')gxApplyNavigation();
  cleanNavigation();
@@ -220,26 +220,46 @@ function setupAccountControls(s){
 }
 window.gePortalRefreshShellState=function(){cleanNavigation();planningTabs();sidebarToggle();};
 function setupPeriodControl(){
- const sel=document.getElementById('gePeriodSelect');if(!sel)return;
- const current=new Date().getFullYear();const years=new Set();
- for(let year=current-2;year<=current+6;year++)years.add(year);
- try{const d=window.GEStore?.get?.()||{};[...(d.initiatives||[]),...(d.budgets||[]),...(d.actuals||[])].forEach(row=>{
-  [row.planningYear,row.year,row.periodStart,row.periodEnd,row.startDate,row.endDate].forEach(raw=>{const m=String(raw||'').match(/20\d{2}/);if(m)years.add(Number(m[0]));});
- })}catch(e){console.warn('[Period options]',e)}
+ const sel=document.getElementById('gePeriodSelect');
+ const from=document.getElementById('gePeriodStart');
+ const to=document.getElementById('gePeriodEnd');
+ if(!sel||!from||!to)return;
+ const current=new Date().getFullYear();
+ const years=new Set();
+ for(let year=current-5;year<=current+10;year++)years.add(year);
+ try{
+  const d=window.GEStore?.get?.()||{};
+  [...(d.initiatives||[]),...(d.budgets||[]),...(d.actuals||[])].forEach(row=>{
+   [row.planningYear,row.year,row.periodStart,row.periodEnd,row.startDate,row.endDate].forEach(raw=>{
+    (String(raw??'').match(/20\d{2}/g)||[]).forEach(year=>years.add(Number(year)));
+   });
+  });
+ }catch(e){console.warn('[Period options]',e)}
  const ordered=[...years].sort((a,b)=>b-a);
- sel.replaceChildren(...ordered.map(y=>new Option(String(y),String(y))));
- const pairFrom=ordered.filter(y=>y>=current-1&&y<=current+3).sort((a,b)=>a-b);
- for(const first of pairFrom)for(const last of pairFrom){if(last<=first)continue;sel.add(new Option(`${first}–${last}`,`${first}:${last}`));}
- let saved='';try{saved=localStorage.getItem('GE_DASHBOARD_PERIOD_RANGE')||localStorage.getItem('GE_DASHBOARD_PERIOD')||''}catch(e){}
- sel.value=[...sel.options].some(option=>option.value===saved)?saved:String(current);
- if(sel.selectedIndex<0)sel.selectedIndex=0;
- function selectedPeriod(){const [start,end]=sel.value.split(':').map(Number);return {start,end:end||start,year:start,years:Array.from({length:(end||start)-start+1},(_,i)=>start+i),mode:end?'range':'single'}}
+ from.replaceChildren(...ordered.map(year=>new Option(String(year),String(year))));
+ to.replaceChildren(...ordered.map(year=>new Option(String(year),String(year))));
+ // All Periods is always the initial reporting view; saved legacy filters never hide imported records.
+ sel.value='all';from.value=String(current);to.value=String(current);
+ function selectedPeriod(){
+  if(sel.value==='all')return null;
+  const start=Number(from.value),end=sel.value==='range'?Number(to.value):start;
+  return {start,end,year:start,years:Array.from({length:end-start+1},(_,i)=>start+i),mode:sel.value};
+ }
  window.geSelectedPortalPeriod=selectedPeriod;
- sel.addEventListener('change',()=>{
-  try{localStorage.setItem('GE_DASHBOARD_PERIOD_RANGE',sel.value);localStorage.setItem('GE_DASHBOARD_PERIOD',String(selectedPeriod().year))}catch(e){}
+ function update(){
+  from.hidden=sel.value==='all';to.hidden=sel.value!=='range';
+  if(sel.value==='range'&&Number(to.value)<Number(from.value))to.value=from.value;
+  if(sel.value==='range'&&Number(from.value)>Number(to.value))from.value=to.value;
+  // Retain compatibility with legacy dashboard period listeners without restoring an old default.
+  try{localStorage.setItem('GE_DASHBOARD_PERIOD_RANGE',sel.value==='all'?'all':sel.value==='range'?`${from.value}:${to.value}`:from.value)}catch(e){}
   document.dispatchEvent(new CustomEvent('ge-dashboard-period-change',{detail:selectedPeriod()}));
- });
+ }
+ sel.addEventListener('change',update);
+ from.addEventListener('change',update);
+ to.addEventListener('change',update);
+ from.hidden=true;to.hidden=true;
 }
+
 
 
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{shell()}, {once:true});else shell();
