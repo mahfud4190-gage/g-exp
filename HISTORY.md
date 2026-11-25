@@ -326,3 +326,13 @@ This is the single canonical work-history file for the portal. Entries are group
 - Notifications: treat inbox-read or notification-read state as acknowledged; show unread notifications in the popup and retain all messages in Inbox; notification navigation remains available on read-save failures.
 - No changes to Firestore schema, service-provider pricing, Initiative records, permissions, or approved financial calculations.
 - Validation: JS syntax checks and the repository's 59 regression checks plus runtime/data/UI contracts passed. Live deployed browser, idle/sleep, and Firebase behavior remain unverified.
+
+
+## 2026-11-25 — Inbox, Notifications, Milestone Quick Edit & Activity Ownership
+
+- Inbox: message-row click opens details; opening marks the message Read using one synchronized Inbox/Notifications state; added recipient-only Read/Unread and Pin/Unpin actions with explicit confirmation before Delete. No bulk-delete or automatic cleanup.
+- Notifications: fixed an inline-comment parsing defect that suppressed the badge/list update and notification click handler. Notification item navigation no longer waits on read acknowledgement.
+- Initiative Milestone: in-card Quick Edit for Weight (%) and Actual Progress (%), with total-weight validation, persistence confirmation, and preservation of other milestone fields. English labels corrected only within the affected Initiative/Milestone and Inbox UI.
+- Calendar & Gantt: shared ownership filter (My Activities, My Initiatives, My Unit, My Station, Shared Activities, All Accessible), default My Activities; filtered Calendar KPI counts match visible activities. Existing server data scope remains authoritative.
+- Inbox API: recipient-specific state changes and explicit message deletion; updated read-state contract regression expectation to reflect synchronized notification status.
+- Idle/runtime reload behavior remains out of scope at the user's request. No changes to Cost & Budget, Firestore collection layout, or unrelated UI modules.

@@ -5836,3 +5836,10 @@ html body.portal-ready.portal-shell-ready .ge-session .ge-period-filter{gap:7px;
 html body.portal-ready.portal-shell-ready .ge-session .ge-period-filter label{font-size:10px;color:#dbe8f7;white-space:nowrap}
 html body.portal-ready.portal-shell-ready .ge-session .ge-period-filter select{min-width:0;max-width:118px;padding-right:2px}
 html body.portal-ready.portal-shell-ready .ge-session .ge-period-filter select[hidden]{display:none}
+
+/* Milestone Timeline — in-card financial progress edit (scoped) */
+.timeline-card-v224 .ge-milestone-quick-editor{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border,#dbe5ee)}
+.timeline-card-v224 .ge-milestone-quick-editor label{display:flex;flex-direction:column;gap:6px;font-weight:600;font-size:13px}
+.timeline-card-v224 .ge-milestone-quick-editor input{width:100%;min-width:0;box-sizing:border-box;border:1px solid #c9d8e6;border-radius:9px;padding:10px;font:inherit}
+.timeline-card-v224 .ge-milestone-quick-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px}
+.timeline-card-v224 .ge-milestone-quick-editor [data-error]{grid-column:1/-1;color:#9b2630}

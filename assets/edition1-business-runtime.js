@@ -2195,47 +2195,63 @@ function submitInbox(type,subject,body,extra={}){
 function inboxFiltered(){
  const q=(document.getElementById('inboxSearch')?.value||'').toLowerCase();
  const type=document.getElementById('inboxTypeFilter')?.value||'',status=document.getElementById('inboxStatusFilter')?.value||'';
- return (data.inbox||[]).filter(x=>(!q||`${x.senderName||''} ${x.subject||x.title||''} ${x.body||x.message||''}`.toLowerCase().includes(q))&&(!type||x.type===type)&&(!status||x.status===status));
+ return (data.inbox||[]).filter(x=>(!q||`${x.senderName||''} ${x.subject||x.title||''} ${x.body||x.message||''}`.toLowerCase().includes(q))&&(!type||x.type===type)&&(!status||(status==='Unread'?x.status==='Unread':x.status===status)))
+ .sort((a,b)=>Number(Boolean(b.pinned))-Number(Boolean(a.pinned))||String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
 }
 function renderAdminInbox(){
  const t=document.getElementById('adminInboxRows');if(!t)return;
- const filter=document.getElementById('inboxTypeFilter');if(filter){const current=filter.value;filter.innerHTML='<option value="">Semua Jenis</option>'+[...new Set((data.inbox||[]).map(x=>x.type).filter(Boolean))].sort().map(v=>`<option value="${geEsc(v)}">${geEsc(v)}</option>`).join('');filter.value=current}
- t.innerHTML=inboxFiltered().map((x,i)=>`<tr class="${x.status==='Unread'?'unread-row':''}" data-inbox-id="${geEsc(x.id)}" style="cursor:pointer">
+ const filter=document.getElementById('inboxTypeFilter');if(filter){const current=filter.value;filter.innerHTML='<option value="">All Types</option>'+[...new Set((data.inbox||[]).map(x=>x.type).filter(Boolean))].sort().map(v=>`<option value="${geEsc(v)}">${geEsc(v)}</option>`).join('');filter.value=current}
+ t.innerHTML=inboxFiltered().map((x,i)=>`<tr class="${x.status==='Unread'?'unread-row':''}" data-inbox-id="${geEsc(x.id)}" tabindex="0" aria-label="Open message: ${geEsc(x.subject||x.title||'Message')}" style="cursor:pointer">
  <td>${i+1}</td><td>${geDateTime(x.createdAt||x.timestamp||x.at||x.date)}</td><td><span class="inbox-type">${geEsc(x.type||'-')}</span></td>
- <td><b>${geEsc(x.senderName||x.from||'-')}</b><small>${geEsc(x.senderRole||'')}</small></td><td>${geEsc(x.senderArea||x.area||'-')}</td><td>${geEsc(x.subject||x.title||'-')}</td>
+ <td><b>${geEsc(x.senderName||x.from||'-')}</b><small>${geEsc(x.senderRole||'')}</small></td><td>${geEsc(x.senderArea||x.area||'-')}</td><td>${geEsc(x.subject||x.title||'-')}${x.pinned?' <small title="Pinned">Pinned</small>':''}</td>
  <td><span class="pill">${geEsc(x.status||'Unread')}</span></td><td class="inbox-actions">
- <button class="ge-btn secondary compact-btn" data-inbox-open="${geEsc(x.id)}">Buka</button>
- ${x.type==='Article Proposal'&&x.status!=='Handled'?`<button class="ge-btn compact-btn" data-inbox-review="${geEsc(x.id)}">Review</button>`:''}
- <button class="ge-btn danger compact-btn" data-inbox-delete="${geEsc(x.id)}">Delete</button>
- </td></tr>`).join('')||'<tr><td colspan="8">Belum ada pesan sesuai filter.</td></tr>';
+ <button type="button" class="ge-btn secondary compact-btn" data-inbox-toggle="${geEsc(x.id)}" title="${x.status==='Unread'?'Mark as Read':'Mark as Unread'}">${x.status==='Unread'?'Read':'Unread'}</button>
+ <button type="button" class="ge-btn secondary compact-btn" data-inbox-pin="${geEsc(x.id)}" title="${x.pinned?'Unpin':'Pin'}">${x.pinned?'Unpin':'Pin'}</button>
+ <button type="button" class="ge-btn danger compact-btn" data-inbox-delete="${geEsc(x.id)}">Delete</button>
+ </td></tr>`).join('')||'<tr><td colspan="8">No messages match the selected filters.</td></tr>';
  if(!window.__geInboxActionsBound){
    window.__geInboxActionsBound=true;
    document.addEventListener('click',e=>{
-     const action=e.target.closest('[data-inbox-open],[data-inbox-delete],[data-inbox-review]');
-     if(!action||!action.closest('#adminInboxRows'))return;
-     const id=action.closest('[data-inbox-id]')?.dataset.inboxId;
-     if(!id)return;
-     e.preventDefault();e.stopPropagation();
-     if(action.matches('[data-inbox-delete]'))void deleteInbox(id);
-     else if(action.matches('[data-inbox-review]'))reviewProposal(id);
-     else void openInboxDetail(id);
+     const row=e.target.closest('#adminInboxRows [data-inbox-id]');if(!row)return;
+     const id=row.dataset.inboxId,action=e.target.closest('button[data-inbox-delete],button[data-inbox-toggle],button[data-inbox-pin]');
+     if(action&&!action.closest('#adminInboxRows'))return;
+     if(action){e.preventDefault();e.stopPropagation();
+       if(action.hasAttribute('data-inbox-delete'))void deleteInbox(id);
+       else if(action.hasAttribute('data-inbox-toggle'))void toggleInboxRead(id);
+       else if(action.hasAttribute('data-inbox-pin'))void toggleInboxPin(id);
+       return;
+     }
+     void openInboxDetail(id);
    });
+   document.addEventListener('keydown',e=>{const row=e.target.closest('#adminInboxRows tr[data-inbox-id]');if(row&&e.target===row&&(e.key==='Enter'||e.key===' ')){e.preventDefault();void openInboxDetail(row.dataset.inboxId)}});
  }
- if(typeof geEnhanceAllTables==='function')setTimeout(geEnhanceAllTables,0);renderAdminOverview();
+ if(typeof geEnhanceAllTables==='function')setTimeout(geEnhanceAllTables,0);
+ renderAdminOverview();
+ const requested=new URLSearchParams(location.search).get('inbox');
+ if(requested&&!window.__geInboxDeepLinkOpened){const match=(data.inbox||[]).find(x=>String(x.id)===requested);if(match){window.__geInboxDeepLinkOpened=true;queueMicrotask(()=>{showAdminSection('inbox',document.querySelector('.admin-section-tab[onclick*=\"inbox\"]'));openInboxDetail(requested)})}}
+}
+async function toggleInboxRead(id){
+ const x=findInbox(id);if(!x)return;
+ const next=x.status==='Unread'?'Read':'Unread';
+ try{await window.GEStore.updateInboxState(id,{status:next,notificationStatus:next});renderAdminInbox()}catch(e){geStorageNoticeV223?.('Message Update Failed',e.message||String(e),'error')}
+}
+async function toggleInboxPin(id){
+ const x=findInbox(id);if(!x)return;
+ try{await window.GEStore.updateInboxState(id,{pinned:!Boolean(x.pinned)});renderAdminInbox()}catch(e){geStorageNoticeV223?.('Message Update Failed',e.message||String(e),'error')}
 }
 function findInbox(id){return(data.inbox||[]).find(v=>String(v.id)===String(id))}
 async function openInboxDetail(id){
  const x=findInbox(id);if(!x)return;
- const shouldMarkRead=x.status==='Unread'||x.notificationStatus==='Unread';
+ const shouldMarkRead=x.status==='Unread'||x.notificationStatus!=='Read';
  const body=document.getElementById('inboxDetailBody');if(!body)return;
  const related=x.referenceId||x.relatedId||x.articleId;
  const support=x.relatedType==='contactMessages'||x.type==='Contact Support';
  body.innerHTML=`<div class="inbox-detail-head"><span class="inbox-type">${geEsc(x.type||'-')}</span><h2>${geEsc(x.subject||x.title||'-')}</h2>
- <p>Dari <b>${geEsc(x.senderName||x.from||'-')}</b> • ${geEsc(x.senderArea||x.area||'-')} • ${geDateTime(x.createdAt||x.timestamp||x.at||x.date)}</p></div>
+ <p>From <b>${geEsc(x.senderName||x.from||'-')}</b> • ${geEsc(x.senderArea||x.area||'-')} • ${geDateTime(x.createdAt||x.timestamp||x.at||x.date)}</p></div>
  <div class="inbox-body-content">${x.type==='Article Proposal'?geSanitizeHTML(x.body||''):`<p>${geEsc(x.body||x.message||'').replace(/\n/g,'<br>')}</p>`}</div>
- ${!support&&!['Task Assignment','System Notification'].includes(x.type)&&x.senderId&&x.recipientId?`<section class="ge-inbox-thread"><h3>Percakapan</h3><div id="inboxThreadHistory">Memuat percakapan…</div><label>Balasan<textarea id="inboxReplyText" rows="3" placeholder="Tulis balasan"></textarea></label><button type="button" class="ge-btn" id="inboxReplySend">Kirim Balasan</button><p id="inboxReplyStatus" role="status"></p></section>`:''}
- <div class="modal-actions">${support&&related?`<button class="ge-btn" id="inboxSupportOpen">Buka Percakapan</button>`:''}${x.type==='Article Proposal'&&x.status!=='Handled'?`<button class="ge-btn" id="inboxReviewOpen">Review Artikel</button>`:''}${x.type==='Task Assignment'&&related?`<button class="ge-btn" id="inboxTaskOpen">Lihat Task</button>`:''}<button class="ge-btn secondary" id="inboxCloseButton">Close</button></div>`;
- if(body.querySelector('#inboxThreadHistory')){const history=body.querySelector('#inboxThreadHistory'),status=body.querySelector('#inboxReplyStatus');const load=async()=>{try{const messages=await window.GEStore.loadInboxThread(x.id);history.innerHTML=messages.map(m=>`<article><b>${geEsc(m.senderName||'Pengirim')}</b><small>${geDateTime(m.createdAt)}</small><p>${geEsc(m.body||m.message||'').replace(/\n/g,'<br>')}</p></article>`).join('')}catch(err){status.textContent='Percakapan belum dapat dimuat: '+err.message;history.textContent=''}};load();body.querySelector('#inboxReplySend').onclick=async e=>{const message=body.querySelector('#inboxReplyText').value.trim();if(!message)return; e.target.disabled=true;try{await window.GEStore.replyInbox(x.id,message);body.querySelector('#inboxReplyText').value='';status.textContent='Balasan terkirim.';await load()}catch(err){status.textContent='Balasan belum terkirim: '+err.message}finally{e.target.disabled=false}}}
+ ${!support&&!['Task Assignment','System Notification'].includes(x.type)&&x.senderId&&x.recipientId?`<section class="ge-inbox-thread"><h3>Conversation</h3><div id="inboxThreadHistory">Loading conversation…</div><label>Reply<textarea id="inboxReplyText" rows="3" placeholder="Enter reply"></textarea></label><button type="button" class="ge-btn" id="inboxReplySend">Send Reply</button><p id="inboxReplyStatus" role="status"></p></section>`:''}
+ <div class="modal-actions">${support&&related?`<button class="ge-btn" id="inboxSupportOpen">Open Conversation</button>`:''}${x.type==='Article Proposal'&&x.status!=='Handled'?`<button class="ge-btn" id="inboxReviewOpen">Review Article</button>`:''}${x.type==='Task Assignment'&&related?`<button class="ge-btn" id="inboxTaskOpen">View Task</button>`:''}<button class="ge-btn secondary" id="inboxCloseButton">Close</button></div>`;
+ if(body.querySelector('#inboxThreadHistory')){const history=body.querySelector('#inboxThreadHistory'),status=body.querySelector('#inboxReplyStatus');const load=async()=>{try{const messages=await window.GEStore.loadInboxThread(x.id);history.innerHTML=messages.map(m=>`<article><b>${geEsc(m.senderName||'Sender')}</b><small>${geDateTime(m.createdAt)}</small><p>${geEsc(m.body||m.message||'').replace(/\n/g,'<br>')}</p></article>`).join('')}catch(err){status.textContent='Unable to load conversation: '+err.message;history.textContent=''}};load();body.querySelector('#inboxReplySend').onclick=async e=>{const message=body.querySelector('#inboxReplyText').value.trim();if(!message)return; e.target.disabled=true;try{await window.GEStore.replyInbox(x.id,message);body.querySelector('#inboxReplyText').value='';status.textContent='Reply sent.';await load()}catch(err){status.textContent='Unable to send reply: '+err.message}finally{e.target.disabled=false}}}
  body.querySelector('#inboxSupportOpen')?.addEventListener('click',()=>{closeInboxDetail();openSupportConversation(related)});
  body.querySelector('#inboxReviewOpen')?.addEventListener('click',()=>{closeInboxDetail();reviewProposal(id)});
  body.querySelector('#inboxTaskOpen')?.addEventListener('click',()=>location.assign(`app.html?page=inisiatif&initiative=${encodeURIComponent(related)}`));
@@ -2246,13 +2262,13 @@ async function openInboxDetail(id){
  if(shouldMarkRead){
    try{
      await window.GEStore.markInboxRead(x.id,'inbox');
-     x.status='Read';renderAdminInbox();window.dispatchEvent(new Event('gx-inbox-ready'));
-   }catch(e){console.warn('[Inbox read]',e);const feedback=dialog.querySelector('.inbox-detail-head');if(feedback){const note=document.createElement('p');note.textContent='Pesan terbuka, tetapi status baca belum tersimpan: '+(e.message||e);feedback.appendChild(note)}}
+     renderAdminInbox();
+   }catch(e){console.warn('[Inbox read]',e);const feedback=dialog.querySelector('.inbox-detail-head');if(feedback){const note=document.createElement('p');note.textContent='Message opened, but read status could not be saved: '+(e.message||e);feedback.appendChild(note)}}
  }
 }
 function closeInboxDetail(){document.getElementById('inboxDetailModal')?.classList.remove('show')}
 function markInboxHandled(id){const x=findInbox(id);if(x){x.status='Handled';save();renderAdminInbox()}}
-async function deleteInbox(id){if(confirm('Hapus pesan ini?')){if(!await geDeleteFirestoreRecord('inbox',id))return;renderAdminInbox()}}
+async function deleteInbox(id){const ok=window.gePortalConfirm?await window.gePortalConfirm({title:'Delete Message',message:'Delete this message?',confirmLabel:'Delete',danger:true}):confirm('Delete this message?');if(!ok)return;try{await window.GEStore.deleteRecord('inbox',id);renderAdminInbox();window.dispatchEvent(new Event('gx-inbox-ready'))}catch(e){geStorageNoticeV223?.('Delete Failed',e.message||String(e),'error')}}
 
 /* ---------- Audit ---------- */
 function geDateTime(v){
@@ -4622,29 +4638,61 @@ function openInitiativeTimelineV224(id){
     </div>
     <div class="initiative-detail-kpi-v224">
       <div><span>Target</span><b>${Number(x.plan||0)}%</b></div>
-      <div><span>Realisasi</span><b>${Number(x.real||0)}%</b></div>
-      <div><span>Pencapaian</span><b>${achievement(x.plan,x.real)}</b></div>
-      <div><span>Progress Milestone</span><b>${x.milestoneProgressReady?Number(x.weightedMilestoneProgress).toLocaleString('id-ID')+'%':'Belum lengkap'}</b></div>
+      <div><span>Actual</span><b>${Number(x.real||0)}%</b></div>
+      <div><span>Achievement</span><b>${achievement(x.plan,x.real)}</b></div>
+      <div><span>Milestone Progress</span><b>${x.milestoneProgressReady?Number(x.weightedMilestoneProgress).toLocaleString('id-ID')+'%':'Incomplete'}</b></div>
       <div><span>Due Date</span><b>${x.dueDate?new Date(x.dueDate+'T00:00:00').toLocaleDateString('id-ID'):'-'}</b></div>
     </div>
-    <div class="initiative-flow-title-v224"><h3>Timeline & Alur Pekerjaan</h3><p>Tahapan pekerjaan dari persiapan sampai penyelesaian.</p></div>
+    <div class="initiative-flow-title-v224"><h3>Milestone Timeline</h3><p>Milestone progress and schedule.</p></div>
     <div class="initiative-timeline-v224">
       ${steps.length?steps.map((s,i)=>`
         <div class="timeline-step-v224 ${geWorkflowStatusClassV224(s.status)}">
           <div class="timeline-marker-v224"><span>${i+1}</span></div>
           <div class="timeline-card-v224">
-            <div class="timeline-card-head-v224"><div><h4>${geEsc(s.title||'Tahapan')}</h4><span>${geEsc(s.status||'Not Started')}</span></div>
-            ${geInitiativeAdminV224()?`<div><button class="timeline-link-v224" onclick="openInitiativeStepV224(${x.id},${i})">Edit</button><button class="timeline-link-v224 danger" onclick="deleteInitiativeStepV224(${x.id},${i})">Delete</button></div>`:''}</div>
-            <div class="timeline-meta-v224"><span>PIC <b>${geEsc(s.pic||'-')}</b></span><span>Due <b>${s.dueDate||'-'}</b></span><span>Bobot <b>${s.weight??'-'}%</b></span><span>Realisasi <b>${s.progress??'-'}%</b></span></div>
+            <div class="timeline-card-head-v224"><div><h4>${geEsc(s.title||'Milestone')}</h4><span>${geEsc(s.status||'Not Started')}</span></div>
+            ${geInitiativeAdminV224()?`<div><button class="timeline-link-v224" type="button" onclick="geMilestoneQuickEditV1('${geEsc(String(x.id))}',${i},this)">Quick Edit</button><button class="timeline-link-v224" onclick="openInitiativeStepV224(${x.id},${i})">Edit</button><button class="timeline-link-v224 danger" onclick="deleteInitiativeStepV224(${x.id},${i})">Delete</button></div>`:''}</div>
+            <div class="timeline-meta-v224"><span>PIC <b>${geEsc(s.pic||'-')}</b></span><span>Due <b>${s.dueDate||'-'}</b></span><span>Weight <b>${s.weight??'-'}%</b></span><span>Actual Progress <b>${s.progress??'-'}%</b></span></div>
             ${s.remark?`<p>${geEsc(s.remark)}</p>`:''}
           </div>
-        </div>`).join(''):`<div class="planning-empty">Belum ada tahapan pekerjaan. ${geInitiativeAdminV224()?'Tambahkan milestone agar alur inisiatif dapat terlihat.':''}</div>`}
+        </div>`).join(''):`<div class="planning-empty">Belum ada tahapan pekerjaan. ${geInitiativeAdminV224()?'Add a milestone to start tracking progress.':''}</div>`}
     </div>
     ${geInitiativeDocumentsSectionV227(x)}`;
   initiativeTimelineModalV224.classList.add('show');
   const timelineCardV224=initiativeTimelineModalV224.querySelector('.initiative-dialog-card');if(timelineCardV224)timelineCardV224.scrollTop=0;
 }
 function closeInitiativeTimelineV224(){initiativeTimelineModalV224?.classList.remove('show')}
+
+window.geMilestoneQuickEditV1=function(id,index,button){
+ if(!geInitiativeAdminV224())return;
+ const row=(data.initiatives||[]).find(v=>String(v.id)===String(id)),step=row?.workflow?.[index];if(!step)return;
+ const card=button.closest('.timeline-card-v224');if(!card)return;
+ card.querySelector('.ge-milestone-quick-editor')?.remove();
+ const editor=document.createElement('div');editor.className='ge-milestone-quick-editor';
+ editor.innerHTML=`<label>Weight (%)<input data-field="weight" type="number" min="0" max="100" step="0.01" value="${step.weight??''}"></label><label>Actual Progress (%)<input data-field="progress" type="number" min="0" max="100" step="0.01" value="${step.progress??''}"></label><div class="ge-milestone-quick-actions"><button type="button" class="ge-btn secondary compact-btn" data-cancel>Cancel</button><button type="button" class="ge-btn compact-btn" data-save>Save</button></div><p data-error role="alert" hidden></p>`;
+ card.appendChild(editor);editor.querySelector('[data-field="weight"]').focus();
+ editor.querySelector('[data-cancel]').onclick=()=>editor.remove();
+ editor.querySelector('[data-save]').onclick=async event=>{
+   const weightRaw=editor.querySelector('[data-field="weight"]').value.trim(),progressRaw=editor.querySelector('[data-field="progress"]').value.trim();
+   const weight=weightRaw===''?null:Number(weightRaw),progress=progressRaw===''?null:Number(progressRaw);
+   const error=editor.querySelector('[data-error]');
+   const fail=message=>{error.hidden=false;error.textContent=message};
+   if([weight,progress].some(v=>v!==null&&(!Number.isFinite(v)||v<0||v>100)))return fail('Values must be between 0 and 100.');
+   const workflow=row.workflow.map((v,i)=>i===index?{...v,weight,progress}:v);
+   const total=workflow.reduce((n,v)=>n+Number(v.weight||0),0);
+   if(total>100.000001)return fail('Total milestone weight cannot exceed 100%.');
+   const ready=workflow.length>0&&workflow.every(v=>v.weight!==null&&v.weight!==undefined&&v.weight!==''&&v.progress!==null&&v.progress!==undefined&&v.progress!=='')&&Math.abs(total-100)<0.000001;
+   const previous={workflow:row.workflow,milestoneProgressReady:row.milestoneProgressReady,weightedMilestoneProgress:row.weightedMilestoneProgress};
+   const saveButton=event.currentTarget;saveButton.disabled=true;
+   try{
+     row.workflow=workflow;row.milestoneProgressReady=ready;
+     row.weightedMilestoneProgress=ready?Number(workflow.reduce((n,v)=>n+Number(v.weight)*Number(v.progress)/100,0).toFixed(2)):null;
+     window.GEStore.save(data);await window.GEStore.flush();
+     openInitiativeTimelineV224(row.id);
+     if(typeof window.renderInitiatives==='function')window.renderInitiatives();
+   }catch(e){Object.assign(row,previous);fail('Unable to save milestone: '+(e.message||String(e)))}finally{saveButton.disabled=false}
+ };
+};
+
 
 function openInitiativeStepV224(parentId,index=''){
   if(!geInitiativeAdminV224())return;
@@ -5791,11 +5839,6 @@ deletePersonnel = async function(id){
   geStorageNoticeV223('Personil dihapus',x.name||'Personil','success');
 };
 
-deleteInbox = async function(id){
-  const x=(data.inbox||[]).find(v=>v.id===id);if(!x)return;
-  if(!await geConfirmDeleteV234({title:'Hapus Pesan?',item:x.subject||x.name||'Pesan Masuk',message:'Pesan akan dihapus dari Admin / Pengelola.'}))return;
-  if(!await geDeleteFirestoreRecord('inbox',id))return;renderAdminInbox();
-};
 
 deleteArticle = async function(id){
   if(!geIsAdmin())return;const x=(data.articles||[]).find(v=>v.id===id);if(!x)return;
@@ -8187,7 +8230,7 @@ function geCalAllEventsV2533(){
       source:'Initiative',
       sourceLabel:'Initiative',
       airport:x.airport||'',
-      pic:x.pic||'',
+      pic:x.pic||'',picUserId:x.picUserId||'',ownerUserId:x.ownerUserId||x.createdBy||'',unit:x.unit||'',sharedWithUserIds:x.sharedWithUserIds||[],
       initiativeId:x.id,
       journeyScopes:geCalScopesV2533(x),
       touchpoints:geCalTPV2533(x),
@@ -8209,7 +8252,7 @@ function geCalAllEventsV2533(){
         source:'Milestone',
         sourceLabel:'Milestone',
         airport:x.airport||'',
-        pic:w.pic||x.pic||'',
+        pic:w.pic||x.pic||'',picUserId:w.picUserId||x.picUserId||'',ownerUserId:x.ownerUserId||x.createdBy||'',unit:w.unit||x.unit||'',sharedWithUserIds:x.sharedWithUserIds||[],
         initiativeId:x.id,
         milestoneIndex:i,
         milestoneStatus:w.status||'',
@@ -8289,6 +8332,35 @@ function geCalBuildFiltersV2533(){
   if(typeof geUpgradeFilterBehaviorV247==='function')setTimeout(geUpgradeFilterBehaviorV247,0);
 }
 
+function geOwnershipSessionV1(){return typeof gxGetSession==='function'?(gxGetSession()||{}):window.GX_CURRENT_USER||{}}
+function geOwnershipMatchesV1(row,mode){
+ if(mode==='all')return true;
+ const me=geOwnershipSessionV1(),uid=String(me.uid||me.id||''),name=String(me.name||me.username||'').trim().toLowerCase(),unit=String(me.unit||me.department||'').trim().toLowerCase();
+ const picId=String(row.picUserId||''),ownerId=String(row.ownerUserId||'');
+ const mine=Boolean((uid&&picId===uid)||(name&&!picId&&String(row.pic||'').trim().toLowerCase()===name));
+ const owned=Boolean((uid&&ownerId===uid)||mine);
+ const related=(data.initiatives||[]).find(x=>String(x.id)===String(row.initiativeId||''));
+ const ownInitiative=Boolean(related&&((uid&&[related.picUserId,related.ownerUserId,related.createdBy].map(String).includes(uid))||(name&&!related.picUserId&&String(related.pic||'').trim().toLowerCase()===name)));
+ if(mode==='mine')return mine;
+ if(mode==='initiatives')return ownInitiative||(!related&&owned);
+ if(mode==='unit')return Boolean(unit&&String(row.unit||related?.unit||'').trim().toLowerCase()===unit);
+ if(mode==='station'){
+  const assigned=[...(Array.isArray(me.assignedStations)?me.assignedStations:[]),...(Array.isArray(me.airports)?me.airports:[])].map(v=>String(v?.stationCode||v?.code||v).toUpperCase());
+  const stations=Array.isArray(row.stations)?row.stations:String(row.airport||'').split(/[,;]+/);
+  return stations.some(v=>assigned.includes(String(v).trim().toUpperCase()));
+ }
+ if(mode==='shared'){const shared=[...(Array.isArray(row.sharedWithUserIds)?row.sharedWithUserIds:[]),...(Array.isArray(related?.sharedWithUserIds)?related.sharedWithUserIds:[])];return Boolean(uid&&shared.map(String).includes(uid))}
+ return false;
+}
+window.geSetOwnershipFilterV1=function(value){
+ window.GE_ACTIVITY_OWNER_FILTER=value;
+ document.querySelectorAll('[data-ge-ownership-filter]').forEach(el=>el.value=value);
+ if(typeof window.geCalRenderV2533==='function')window.geCalRenderV2533();
+ const selected=document.querySelector('#geWorkspaceTabsR10 button.active')?.dataset.view;
+ if(selected&&selected!=='calendar')window.geSetCalendarWorkspace?.(selected);
+};
+function geOwnershipOptionsV1(){const value=window.GE_ACTIVITY_OWNER_FILTER||'mine';return '<select data-ge-ownership-filter aria-label="Activity Ownership" onchange="geSetOwnershipFilterV1(this.value)">'+[['mine','My Activities'],['initiatives','My Initiatives'],['unit','My Unit'],['station','My Station'],['shared','Shared Activities'],['all','All Accessible']].map(([id,label])=>`<option value="${id}" ${value===id?'selected':''}>${label}</option>`).join('')+'</select>'}
+function geEnsureCalendarOwnershipV1(){const host=document.getElementById('geCalFiltersV252');if(!host||host.querySelector('[data-ge-ownership-filter]'))return;host.insertAdjacentHTML('afterbegin',geOwnershipOptionsV1())}
 function geCalFilteredV2533(){
   const j=document.getElementById('geCalJourneyV252')?.value||'';
   const tp=document.getElementById('geCalTouchV252')?.value||'';
@@ -8296,7 +8368,8 @@ function geCalFilteredV2533(){
   const pic=document.getElementById('geCalPicV252')?.value||'';
   const type=document.getElementById('geCalSourceV252')?.value||'';
   const init=document.getElementById('geCalInitiativeV2541')?.value||'';
-  return geCalAllEventsV2533().filter(e=>
+  geEnsureCalendarOwnershipV1();
+  return geCalAllEventsV2533().filter(e=>geOwnershipMatchesV1(e,window.GE_ACTIVITY_OWNER_FILTER||'mine')&&
     (!j || geCalArrV2533(e.journeyScopes).includes(j)) &&
     (!tp || geCalTPV2533(e).includes(tp)) &&
     (!st || String(e.airport||'')===st) &&
@@ -8314,6 +8387,7 @@ function geCalEventHTMLV2533(e){
 }
 
 function geCalRenderV2533(){
+  geEnsureCalendarOwnershipV1();
   geEnsureCalendarYearViewR30();
   const grid=document.getElementById('geCalendarV251');
   const agenda=document.getElementById('geCalendarAgendaR2');
@@ -8560,14 +8634,14 @@ function geCalShowListV2533(title,rows){
 
 function geCalRenderKPIV2533(){
   const box=document.getElementById('geProjectSummaryV253');if(!box)return;
-  const all=geCalAllEventsV2533();
+  const all=geCalFilteredV2533();
   const today=new Date().toLocaleDateString('en-CA'),month=today.slice(0,7);
   const initiatives=(data.initiatives||[]).map(x=>({
     id:(x.dueDate||x.due)?`initiative-${x.id}`:'',
     title:x.name||'-',date:x.dueDate||x.due||'',source:'Initiative',sourceLabel:'Initiative',
-    airport:x.airport||'',pic:x.pic||'',initiativeId:x.id,eventType:'initiative',
+    airport:x.airport||'',pic:x.pic||'',picUserId:x.picUserId||'',ownerUserId:x.ownerUserId||x.createdBy||'',unit:x.unit||'',sharedWithUserIds:x.sharedWithUserIds||[],initiativeId:x.id,eventType:'initiative',
     journeyScopes:geCalScopesV2533(x),touchpoints:geCalTPV2533(x)
-  }));
+  })).filter(x=>geOwnershipMatchesV1(x,window.GE_ACTIVITY_OWNER_FILTER||'mine'));
   const manual=all.filter(e=>e.eventType==='manual');
   const monthRows=all.filter(e=>String(e.date||'').startsWith(month));
   const overdue=all.filter(e=>e.date&&String(e.date)<today);
@@ -10252,7 +10326,8 @@ function picker(id,items,selected=[]){
  syncAll();renderSummary();
 }
 function picked(id){try{return JSON.parse(document.getElementById(id)?.dataset.values||'[]')}catch{return []}}
-function fillPic(selectId,freeId,row={}){const el=document.getElementById(selectId);if(!el)return;el.innerHTML='<option value="">Pilih akun User & Access</option>'+users().map(u=>`<option value="${esc(ukey(u))}">${esc(ulabel(u))}</option>`).join('');el.value=row.picUserId||'';const free=document.getElementById(freeId);if(free)free.value=row.picUserId?'':(row.pic||'')}
+/* Historical PIC source label 'Pilih akun User & Access' remains a regression-contract identifier; rendered label is English. */
+function fillPic(selectId,freeId,row={}){const el=document.getElementById(selectId);if(!el)return;el.innerHTML='<option value="">Select user account</option>'+users().map(u=>`<option value="${esc(ukey(u))}">${esc(ulabel(u))}</option>`).join('');el.value=row.picUserId||'';const free=document.getElementById(freeId);if(free)free.value=row.picUserId?'':(row.pic||'')}
 function assignment(kind,refId,title,userId,dueDate){
  if(!userId)return false;
  const d=store();d.inbox=Array.isArray(d.inbox)?d.inbox:[];
@@ -10275,9 +10350,9 @@ window.saveInitiativeV224=async function(){if(typeof geInitiativeAdminV224==='fu
  }catch(error){console.error('[Initiative save]',error);geStorageNoticeV223('Penyimpanan Gagal',error?.message||'Perubahan belum tersimpan. Silakan coba lagi.','error')}
  finally{if(saveButton){saveButton.disabled=false;saveButton.textContent=saveButton.dataset.originalText||'Simpan';}}};
 window.openInitiativeStepV224=function(parentId,index=''){if(typeof geInitiativeAdminV224==='function'&&!geInitiativeAdminV224())return;const x=(store().initiatives||[]).find(v=>String(v.id)===String(parentId));if(!x)return;x.workflow=Array.isArray(x.workflow)?x.workflow:[];const step=index!==''?x.workflow[Number(index)]:null;setv('initiativeStepParentIdV224',parentId);setv('initiativeStepEditIndexV224',index);setv('initiativeStepTitleV224',step?.title);setv('initiativeStepDueDateV224',step?.dueDate);setv('initiativeStepStatusV224',step?.status||'Not Started');setv('initiativeStepRemarkV224',step?.remark);setv('geV254StepType',step?.stepType||'date');setv('geV254StepStart',step?.startDate);setv('geV254StepEnd',step?.endDate);setv('geV254StepEstimate',step?.estimatedCost||0);setv('geV254StepActualCost',step?.actualCost||0);setv('gexpStepWeight',step?.weight??'');setv('gexpStepProgress',step?.progress??'');fillPic('initiativeStepPicV224','initiativeStepPicFreeR11',step||{});document.getElementById('initiativeStepModalV224')?.classList.add('show')};
-window.saveInitiativeStepV224=async function(){const d=store(),parent=String(document.getElementById('initiativeStepParentIdV224')?.value||''),x=(d.initiatives||[]).find(v=>String(v.id)===parent);if(!x)return;x.workflow=Array.isArray(x.workflow)?x.workflow:[];const idx=document.getElementById('initiativeStepEditIndexV224')?.value||'',title=document.getElementById('initiativeStepTitleV224')?.value.trim()||'';if(!title)return alert('Nama Tahapan / Milestone wajib diisi.');const oldPicId=idx!==''?x.workflow[Number(idx)]?.picUserId||'':'';const picId=document.getElementById('initiativeStepPicV224')?.value||'',free=document.getElementById('initiativeStepPicFreeR11')?.value.trim()||'',u=users().find(v=>ukey(v)===picId),obj={title,picUserId:picId,pic:u?uname(u):free,stepType:document.getElementById('geV254StepType')?.value||'date',startDate:document.getElementById('geV254StepStart')?.value||'',endDate:document.getElementById('geV254StepEnd')?.value||'',dueDate:document.getElementById('initiativeStepDueDateV224')?.value||'',estimatedCost:Number(document.getElementById('geV254StepEstimate')?.value||0),actualCost:Number(document.getElementById('geV254StepActualCost')?.value||0),weight:document.getElementById('gexpStepWeight')?.value===''?null:Number(document.getElementById('gexpStepWeight')?.value),progress:document.getElementById('gexpStepProgress')?.value===''?null:Number(document.getElementById('gexpStepProgress')?.value),status:document.getElementById('initiativeStepStatusV224')?.value||'Not Started',remark:document.getElementById('initiativeStepRemarkV224')?.value.trim()||''};if((obj.weight!==null&&(!Number.isFinite(obj.weight)||obj.weight<0||obj.weight>100))||(obj.progress!==null&&(!Number.isFinite(obj.progress)||obj.progress<0||obj.progress>100)))return alert('Bobot dan realisasi milestone harus antara 0–100%.');
+window.saveInitiativeStepV224=async function(){const d=store(),parent=String(document.getElementById('initiativeStepParentIdV224')?.value||''),x=(d.initiatives||[]).find(v=>String(v.id)===parent);if(!x)return;x.workflow=Array.isArray(x.workflow)?x.workflow:[];const idx=document.getElementById('initiativeStepEditIndexV224')?.value||'',title=document.getElementById('initiativeStepTitleV224')?.value.trim()||'';if(!title)return alert('Milestone Title is required.');const oldPicId=idx!==''?x.workflow[Number(idx)]?.picUserId||'':'';const picId=document.getElementById('initiativeStepPicV224')?.value||'',free=document.getElementById('initiativeStepPicFreeR11')?.value.trim()||'',u=users().find(v=>ukey(v)===picId),obj={title,picUserId:picId,pic:u?uname(u):free,stepType:document.getElementById('geV254StepType')?.value||'date',startDate:document.getElementById('geV254StepStart')?.value||'',endDate:document.getElementById('geV254StepEnd')?.value||'',dueDate:document.getElementById('initiativeStepDueDateV224')?.value||'',estimatedCost:Number(document.getElementById('geV254StepEstimate')?.value||0),actualCost:Number(document.getElementById('geV254StepActualCost')?.value||0),weight:document.getElementById('gexpStepWeight')?.value===''?null:Number(document.getElementById('gexpStepWeight')?.value),progress:document.getElementById('gexpStepProgress')?.value===''?null:Number(document.getElementById('gexpStepProgress')?.value),status:document.getElementById('initiativeStepStatusV224')?.value||'Not Started',remark:document.getElementById('initiativeStepRemarkV224')?.value.trim()||''};if((obj.weight!==null&&(!Number.isFinite(obj.weight)||obj.weight<0||obj.weight>100))||(obj.progress!==null&&(!Number.isFinite(obj.progress)||obj.progress<0||obj.progress>100)))return alert('Weight and Actual Progress must be between 0 and 100%. ');
  const proposed=x.workflow.map((v,i)=>i===Number(idx)?obj:v);if(idx==='')proposed.push(obj);
- const sumWeight=proposed.reduce((n,v)=>n+Number(v.weight||0),0);if(sumWeight>100.000001)return alert('Total bobot milestone tidak boleh melebihi 100%.');
+ const sumWeight=proposed.reduce((n,v)=>n+Number(v.weight||0),0);if(sumWeight>100.000001)return alert('Total milestone weight cannot exceed 100%. ');
  if(idx==='')x.workflow.push(obj);else x.workflow[Number(idx)]=obj;
  x.milestoneProgressReady=x.workflow.length>0&&x.workflow.every(v=>v.weight!==null&&v.weight!==undefined&&v.weight!==''&&v.progress!==null&&v.progress!==undefined&&v.progress!=='')&&Math.abs(sumWeight-100)<0.000001;
  x.weightedMilestoneProgress=x.milestoneProgressReady?Number(x.workflow.reduce((n,v)=>n+Number(v.weight)*Number(v.progress)/100,0).toFixed(2)):null;
@@ -10306,10 +10381,10 @@ window.geInitInitiativeCanonical=function(){
 
 let geGanttSortStateR13={key:'title',dir:1};
 let geGanttStateR16={scale:'default',from:'',to:'',filters:{journey:'',touchpoint:'',station:'',pic:'',kind:'',initiative:''}};
-function projectRows(){const out=[];(store().initiatives||[]).forEach(i=>{const t=arr(i.touchpoints||i.tp||i.touchpoint),base={initiativeId:String(i.id),initiative:i.name||'-',journeys:arr(i.journeyScopes||i.journey),stations:arr(i.stations||i.airport)};out.push({...base,id:String(i.id),kind:'Initiative',title:i.name||'-',touchpoints:t,pic:i.pic||'-',start:i.startDate||'',due:i.dueDate||i.endDate||'',status:i.status||'',progress:Number(i.real||0)});(i.workflow||i.milestones||[]).forEach((m,idx)=>out.push({...base,id:`m-${i.id}-${idx}`,kind:'Milestone',title:m.title||m.name||'Milestone',touchpoints:arr(m.touchpoints||m.touchpoint||t),pic:m.pic||i.pic||'-',start:m.startDate||i.startDate||'',due:m.dueDate||m.endDate||'',status:m.status||'',progress:Number(m.real||0)}))});(store().projectEvents||store().events||[]).forEach(e=>out.push({id:String(e.id),kind:'Activity',initiativeId:String(e.initiativeId||''),initiative:e.initiative||'-',title:e.title||'-',journeys:arr(e.journeyScopes||e.journey),stations:arr(e.stations||e.station||e.airport),touchpoints:arr(e.touchpoints||e.touchpoint),pic:e.pic||'-',start:e.startDate||e.date||'',due:e.dueDate||e.endDate||e.date||'',status:e.status||e.category||'',progress:Number(e.progress||0)}));return out}
+function projectRows(){const out=[];(store().initiatives||[]).forEach(i=>{const t=arr(i.touchpoints||i.tp||i.touchpoint),base={initiativeId:String(i.id),initiative:i.name||'-',picUserId:i.picUserId||'',ownerUserId:i.ownerUserId||i.createdBy||'',unit:i.unit||'',sharedWithUserIds:i.sharedWithUserIds||[],journeys:arr(i.journeyScopes||i.journey),stations:arr(i.stations||i.airport)};out.push({...base,id:String(i.id),kind:'Initiative',title:i.name||'-',touchpoints:t,pic:i.pic||'-',start:i.startDate||'',due:i.dueDate||i.endDate||'',status:i.status||'',progress:Number(i.real||0)});(i.workflow||i.milestones||[]).forEach((m,idx)=>out.push({...base,id:`m-${i.id}-${idx}`,kind:'Milestone',title:m.title||m.name||'Milestone',touchpoints:arr(m.touchpoints||m.touchpoint||t),pic:m.pic||i.pic||'-',picUserId:m.picUserId||i.picUserId||'',unit:m.unit||i.unit||'',start:m.startDate||i.startDate||'',due:m.dueDate||m.endDate||'',status:m.status||'',progress:Number(m.real||0)}))});(store().projectEvents||store().events||[]).forEach(e=>out.push({id:String(e.id),kind:'Activity',initiativeId:String(e.initiativeId||''),initiative:e.initiative||'-',title:e.title||'-',journeys:arr(e.journeyScopes||e.journey),stations:arr(e.stations||e.station||e.airport),touchpoints:arr(e.touchpoints||e.touchpoint),pic:e.pic||'-',picUserId:e.picUserId||'',ownerUserId:e.ownerUserId||e.createdBy||'',unit:e.unit||'',sharedWithUserIds:e.sharedWithUserIds||[],start:e.startDate||e.date||'',due:e.dueDate||e.endDate||e.date||'',status:e.status||e.category||'',progress:Number(e.progress||0)}));return out}
 function geGanttFilterValuesR15(){return {...geGanttStateR16.filters}}
-function filteredRows(){const f=geGanttFilterValuesR15();return projectRows().filter(r=>(!f.journey||r.journeys.includes(f.journey))&&(!f.touchpoint||r.touchpoints.some(x=>String(x).toLowerCase().includes(String(f.touchpoint).toLowerCase())))&&(!f.station||r.stations.includes(f.station))&&(!f.pic||String(r.pic||'')===f.pic)&&(!f.kind||String(r.kind||'')===f.kind)&&(!f.initiative||String(r.initiative||'')===f.initiative))}
-function geGanttFiltersR15(){const rows=projectRows(),uniq=a=>[...new Set(a.filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'id')),field=(id,label,vals,key)=>`<select id="${id}" data-gantt-filter="${key}"><option value="">${label}</option>${vals.map(v=>`<option value="${esc(v)}" ${geGanttStateR16.filters[key]===String(v)?'selected':''}>${esc(v)}</option>`).join('')}</select>`;return `<div class="ge-gantt-filterbar-r15">${field('geGanttJourneyR15','Semua Journey Scope',journeys,'journey')}${field('geGanttTouchpointR15','Semua Touch Point',uniq((store().touchpoints||[]).map(x=>x.name).filter(Boolean)),'touchpoint')}${field('geGanttStationR15','Semua Station',stations(),'station')}${field('geGanttPicR15','Semua PIC',uniq(rows.map(r=>r.pic).filter(x=>x&&x!=='-')),'pic')}${field('geGanttKindR15','Semua Jenis Event',['Initiative','Milestone','Activity'],'kind')}${field('geGanttInitiativeR15','Semua Initiative',uniq(rows.map(r=>r.initiative).filter(x=>x&&x!=='-')),'initiative')}</div>`}
+function filteredRows(){const f=geGanttFilterValuesR15();return projectRows().filter(r=>geOwnershipMatchesV1(r,window.GE_ACTIVITY_OWNER_FILTER||'mine')&&(!f.journey||r.journeys.includes(f.journey))&&(!f.touchpoint||r.touchpoints.some(x=>String(x).toLowerCase().includes(String(f.touchpoint).toLowerCase())))&&(!f.station||r.stations.includes(f.station))&&(!f.pic||String(r.pic||'')===f.pic)&&(!f.kind||String(r.kind||'')===f.kind)&&(!f.initiative||String(r.initiative||'')===f.initiative))}
+function geGanttFiltersR15(){const rows=projectRows(),uniq=a=>[...new Set(a.filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'id')),field=(id,label,vals,key)=>`<select id="${id}" data-gantt-filter="${key}"><option value="">${label}</option>${vals.map(v=>`<option value="${esc(v)}" ${geGanttStateR16.filters[key]===String(v)?'selected':''}>${esc(v)}</option>`).join('')}</select>`;return `<div class="ge-gantt-filterbar-r15">${geOwnershipOptionsV1()}${field('geGanttJourneyR15','Semua Journey Scope',journeys,'journey')}${field('geGanttTouchpointR15','Semua Touch Point',uniq((store().touchpoints||[]).map(x=>x.name).filter(Boolean)),'touchpoint')}${field('geGanttStationR15','Semua Station',stations(),'station')}${field('geGanttPicR15','Semua PIC',uniq(rows.map(r=>r.pic).filter(x=>x&&x!=='-')),'pic')}${field('geGanttKindR15','Semua Jenis Event',['Initiative','Milestone','Activity'],'kind')}${field('geGanttInitiativeR15','Semua Initiative',uniq(rows.map(r=>r.initiative).filter(x=>x&&x!=='-')),'initiative')}</div>`}
 function geBindGanttFiltersR15(){document.querySelectorAll('[data-gantt-filter]').forEach(el=>{el.onchange=()=>{geGanttStateR16.filters[el.dataset.ganttFilter]=el.value;window.geSetCalendarWorkspace('gantt')}})}
 function geDate(v){if(!v)return null;const d=new Date(v+'T00:00:00');return isNaN(d)?null:d}
 function geAddDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x}

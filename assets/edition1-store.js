@@ -343,17 +343,33 @@
     if(!s.uid || String(s.uid)!==String(u.uid)) throw new Error('Authoritative user profile/session belum siap.');
     return s;
   }
+  async function updateInboxState(id,changes){
+    const item=state.inbox.find(x=>String(x.id)===String(id));
+    if(!item)throw new Error('Message not found.');
+    const s=session();
+    if(String(item.recipientId||'')!==String(s.uid||s.id||''))throw new Error('Only the recipient may change message state.');
+    const allowed=['status','notificationStatus','pinned'];
+    if(Object.keys(changes).some(k=>!allowed.includes(k)))throw new Error('Unsupported inbox change.');
+    if(Object.entries(changes).every(([k,v])=>item[k]===v))return item;
+    await apiPost({collection:'inbox',action:'UPDATE',id:item.id,data:changes});
+    Object.assign(item,changes);
+    const previous=(baseline.inbox||[]).find(x=>String(x.id)===String(id));
+    if(previous)Object.assign(previous,changes);
+    await writeCache('inbox',state.inbox);
+    await clearManifestCache();
+    if(typeof Event==='function')window.dispatchEvent(new Event('gx-inbox-ready'));
+    return item;
+  }
   async function markInboxRead(id,kind='inbox'){
-    const field=kind==='notification'?'notificationStatus':'status',item=state.inbox.find(x=>String(x.id)===String(id));
-    if(!item)throw new Error('Pesan tidak tersedia pada akun ini.');
-    const s=session();if(String(item.recipientId||'')!==String(s.uid||s.id||''))throw new Error('Status baca hanya dapat diubah oleh penerima.');
-    if(item[field]==='Read'||(field==='notificationStatus'&&!item.notificationStatus&&item.status==='Read'))return item;
-    await apiPost({collection:'inbox',action:'UPDATE',id:item.id,data:{[field]:'Read'}});
-    item[field]='Read';const baselineItem=arr=>arr.find(x=>String(x.id)===String(id));const old=baselineItem(baseline.inbox||[]);if(old)old[field]='Read';
-    await writeCache('inbox',state.inbox);await clearManifestCache();return item;
+    const item=state.inbox.find(x=>String(x.id)===String(id));
+    if(!item)throw new Error('Message not found.');
+    // Read is one consistent state in Inbox and Notifications.
+    const changes={notificationStatus:'Read'};
+    if(item.status==='Unread'||!item.status)changes.status='Read';
+    return updateInboxState(id,changes);
   }
   async function loadInboxThread(id){const t=await token(),r=await fetchWithTimeout('/api/edition1-data?thread='+encodeURIComponent(id),{headers:{Authorization:'Bearer '+t},cache:'no-store'}),p=await r.json();if(!r.ok)throw Error(p.message||'Conversation could not be loaded.');return p.thread||[]}
   async function replyInbox(id,body){const result=await apiPost({collection:'inbox',action:'CREATE',id:globalThis.crypto?.randomUUID?.()||String(Date.now()),data:{replyToId:String(id),body:String(body||'').trim()}});await clearManifestCache();return result}
-  window.data=state; window.GEStore={get:()=>state,save,saveRecord,importInitiatives,deleteRecord,hydrate,refresh,waitAuth,markInboxRead,loadInboxThread,replyInbox,isHydrated:()=>hydrated,flush:()=>pending,source:'Firestore',projectId:window.GX_FIREBASE_CONFIG?.projectId||''};
+  window.data=state; window.GEStore={get:()=>state,save,saveRecord,importInitiatives,deleteRecord,hydrate,refresh,waitAuth,markInboxRead,updateInboxState,loadInboxThread,replyInbox,isHydrated:()=>hydrated,flush:()=>pending,source:'Firestore',projectId:window.GX_FIREBASE_CONFIG?.projectId||''};
   window.addEventListener('gx-data-save-error',e=>{if(e.detail?.message)console.error('Firestore save failed:',e.detail.message)});
 })();
