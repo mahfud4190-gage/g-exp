@@ -12,29 +12,28 @@
  function ensureStyle(href){if([...document.querySelectorAll('link[rel="stylesheet"]')].some(x=>x.href&&x.href.includes(href.split('?')[0])))return;const l=document.createElement('link');l.rel='stylesheet';l.href=href;document.head.appendChild(l);}
  function loadSrc(src,force=false){
   const loaded=window.__geLoadedScripts||(window.__geLoadedScripts=new Map());
-  if(src.includes('assets/master-reference.js'))src='assets/master-reference.js';
-  if(src.includes('assets/dashboard-firestore.js'))src='assets/dashboard-firestore.js';
   const pathname=src.split('?')[0];
   if(!force){
    if(loaded.has(pathname))return loaded.get(pathname);
    const existing=[...document.scripts].find(x=>x.src&&x.src.includes(pathname)&&x.__geLoaded===true);
    if(existing)return Promise.resolve();
   }
-  const promise=new Promise((resolve,reject)=>{
+  const once=(fresh=false)=>new Promise((resolve,reject)=>{
    const script=document.createElement('script');
    const timeoutMs=pathname.includes('edition1-business-runtime.js')?45000:20000;
    let done=false;
    const finish=err=>{
     if(done)return;done=true;clearTimeout(timer);
-    if(err){script.remove();if(!force)loaded.delete(pathname);reject(err)}
+    if(err){script.remove();reject(err)}
     else{script.__geLoaded=true;resolve()}
    };
-   const timer=setTimeout(()=>finish(new Error(`Timeout setelah ${timeoutMs/1000} detik memuat ${src}.`)),timeoutMs);
-   script.src=force?pathname+'?route='+Date.now():src;
+   const timer=setTimeout(()=>finish(new Error(`Timeout loading ${pathname}.`)),timeoutMs);
+   script.src=force?pathname+'?route='+Date.now():(fresh?pathname+'?retry='+Date.now():src);
    script.onload=()=>finish();
-   script.onerror=()=>finish(new Error('Gagal memuat '+src));
+   script.onerror=()=>finish(new Error(`Unable to load ${pathname}.`));
    document.body.appendChild(script);
   });
+  const promise=once(force).catch(()=>once(true)).catch(err=>{if(!force)loaded.delete(pathname);throw err});
   if(!force)loaded.set(pathname,promise);
   return promise;
  }

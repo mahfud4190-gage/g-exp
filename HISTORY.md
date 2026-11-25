@@ -317,3 +317,12 @@ This is the single canonical work-history file for the portal. Entries are group
 - Initiative views use one overlap predicate for both chart summary and list filters, including records whose planningYear already contains a multi-year range. Changing the reporting filter never writes or changes initiative planning records or import data.
 - Existing dashboard change event and legacy period key remain compatible. The current choice is a UI filter only, not a business record. No Initiative Import delta is included.
 - Scope: assets/portal-shell.js, assets/edition1-business-runtime.js, assets/portal.css, and this existing HISTORY.md. No other module, Firestore document, or template changed.
+
+## 2026-11-25 — Initiative Picker, Documents, Runtime Recovery & Notifications
+- Initiative multi-select search: restore native hiding of nonmatching options despite canonical flex label rules; preserve selection and filter semantics.
+- Initiative document section: standard English labels, compact Add Document buttons without clipping, shorter reference/execution descriptions.
+- Portal route script loading: retry failed runtime assets once with a fresh URL, preserve shared pending-load promises and keep the persistent shell.
+- Cache runtime: prefetch assets for the active page rather than every registered page at idle; refresh the service-worker static cache generation.
+- Notifications: treat inbox-read or notification-read state as acknowledged; show unread notifications in the popup and retain all messages in Inbox; notification navigation remains available on read-save failures.
+- No changes to Firestore schema, service-provider pricing, Initiative records, permissions, or approved financial calculations.
+- Validation: JS syntax checks and the repository's 59 regression checks plus runtime/data/UI contracts passed. Live deployed browser, idle/sleep, and Firebase behavior remain unverified.

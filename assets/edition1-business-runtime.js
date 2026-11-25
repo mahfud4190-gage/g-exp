@@ -2226,7 +2226,7 @@ function renderAdminInbox(){
 function findInbox(id){return(data.inbox||[]).find(v=>String(v.id)===String(id))}
 async function openInboxDetail(id){
  const x=findInbox(id);if(!x)return;
- const shouldMarkRead=x.status==='Unread';
+ const shouldMarkRead=x.status==='Unread'||x.notificationStatus==='Unread';
  const body=document.getElementById('inboxDetailBody');if(!body)return;
  const related=x.referenceId||x.relatedId||x.articleId;
  const support=x.relatedType==='contactMessages'||x.type==='Contact Support';
@@ -4529,18 +4529,18 @@ function geInitiativeDocumentsSectionV227(x){
   const r=geDocReadinessV227(x),can=geInitiativeAdminV224();
   return `<div class="initiative-doc-section-v227">
     <div class="initiative-doc-summary-v227">
-      <div><span class="eyebrow">Document Readiness</span><h3>Dokumen Inisiatif</h3><p>Dasar/trigger dan dokumen pendukung pelaksanaan inisiatif.</p></div>
-      <div class="initiative-doc-readiness-v227"><b>${r.pct}%</b><span>${r.total?r.label+' required document':'Belum ada required document'}</span></div>
+      <div><span class="eyebrow">Document Readiness</span><h3>Initiative Documents</h3><p>Supporting documentation and execution records.</p></div>
+      <div class="initiative-doc-readiness-v227"><b>${r.pct}%</b><span>${r.total?r.label+' required document':'No required documents'}</span></div>
     </div>
     <div class="initiative-doc-progress-v227"><i style="width:${r.pct}%"></i></div>
     <div class="initiative-doc-columns-v227">
       <section>
-        <div class="initiative-doc-column-head-v227"><div><h4>Dasar & Trigger Inisiatif</h4><p>Notice, IOC, memo, regulasi, temuan, arahan, atau correspondence yang memicu inisiatif.</p></div>${can?`<button class="ge-btn secondary compact-btn" onclick="openInitiativeDocumentV227(${x.id},'trigger')">Tambah Dokumen</button>`:''}</div>
-        <div class="initiative-doc-list-v227">${x.triggerDocuments.length?x.triggerDocuments.map((d,i)=>geDocCardV227(d,'trigger',x.id,i)).join(''):'<div class="planning-empty">Belum ada dokumen trigger.</div>'}</div>
+        <div class="initiative-doc-column-head-v227"><div><h4>Initiative References</h4><p>Notices, memos, approvals, regulations, and related correspondence.</p></div>${can?`<button class="ge-btn secondary compact-btn" onclick="openInitiativeDocumentV227(${x.id},'trigger')">Add Document</button>`:''}</div>
+        <div class="initiative-doc-list-v227">${x.triggerDocuments.length?x.triggerDocuments.map((d,i)=>geDocCardV227(d,'trigger',x.id,i)).join(''):'<div class="planning-empty">No reference documents.</div>'}</div>
       </section>
       <section>
-        <div class="initiative-doc-column-head-v227"><div><h4>Dokumen Pelaksanaan</h4><p>PPA/FRA, TOR, kajian, BA, kontrak, BAST, dan dokumen pendukung lainnya.</p></div>${can?`<button class="ge-btn secondary compact-btn" onclick="openInitiativeDocumentV227(${x.id},'supporting')">Tambah Dokumen</button>`:''}</div>
-        <div class="initiative-doc-list-v227">${x.supportingDocuments.length?x.supportingDocuments.map((d,i)=>geDocCardV227(d,'supporting',x.id,i)).join(''):'<div class="planning-empty">Belum ada dokumen pelaksanaan.</div>'}</div>
+        <div class="initiative-doc-column-head-v227"><div><h4>Execution Documents</h4><p>PPA/FRA, TOR, assessments, contracts, and handover records.</p></div>${can?`<button class="ge-btn secondary compact-btn" onclick="openInitiativeDocumentV227(${x.id},'supporting')">Add Document</button>`:''}</div>
+        <div class="initiative-doc-list-v227">${x.supportingDocuments.length?x.supportingDocuments.map((d,i)=>geDocCardV227(d,'supporting',x.id,i)).join(''):'<div class="planning-empty">No execution documents.</div>'}</div>
       </section>
     </div>
   </div>`;
@@ -4554,7 +4554,7 @@ function openInitiativeDocumentV227(parentId,kind,index=''){
   initiativeDocParentIdV227.value=parentId;
   initiativeDocKindV227.value=kind;
   initiativeDocEditIndexV227.value=index;
-  initiativeDocModalTitleV227.textContent=d?'Update Dokumen Inisiatif':(kind==='trigger'?'Tambah Dasar / Trigger':'Tambah Dokumen Pelaksanaan');
+  initiativeDocModalTitleV227.textContent=d?'Edit Initiative Document':(kind==='trigger'?'Add Reference Document':'Add Execution Document');
   initiativeDocTypeV227.innerHTML=geDocTypeOptionsV227().map(v=>`<option>${v}</option>`).join('');
   initiativeDocTypeV227.value=d?.type|| (kind==='trigger'?'IOC':'PPA / FRA');
   initiativeDocReferenceV227.value=d?.referenceNo||'';
@@ -4565,7 +4565,7 @@ function openInitiativeDocumentV227(parentId,kind,index=''){
   initiativeDocRequiredV227.checked=!!d?.required;
   initiativeDocDescriptionV227.value=d?.description||'';
   initiativeDocFileV227.value='';
-  initiativeDocCurrentFileV227.textContent=d?.fileName?`File saat ini: ${d.fileName}`:'Belum ada file.';
+  initiativeDocCurrentFileV227.textContent=d?.fileName?`Current file: ${d.fileName}`:'No file attached.';
   initiativeDocModalV227.classList.add('show');
 }
 function closeInitiativeDocumentV227(){initiativeDocModalV227?.classList.remove('show')}
