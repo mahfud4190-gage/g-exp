@@ -1,0 +1,24 @@
+'use strict';
+const fs=require('node:fs');
+const vm=require('node:vm');
+const assert=require('node:assert/strict');
+const app=fs.readFileSync('app.html','utf8');
+const start=app.indexOf('function loadSrc('),end=app.indexOf("if(['cx-import'",start);
+assert(start!==-1&&end>start,'App must expose runtime loader.');
+const scripts=[],timers=[];
+const document={scripts,body:{appendChild(script){scripts.push(script)}},createElement(){const script={src:'',remove(){const i=scripts.indexOf(script);if(i>=0)scripts.splice(i,1)} };return script}};
+const scope={window:{},document,setTimeout:(fn,ms)=>{const t={fn,ms};timers.push(t);return t},clearTimeout:()=>{},Promise,Error,Date};
+const loadSrc=vm.runInNewContext(app.slice(start,end)+'\nloadSrc',scope);
+(async()=>{
+ const p1=loadSrc('assets/a.js');assert.equal(scripts.length,1);
+ assert.strictEqual(loadSrc('assets/a.js'),p1,'Concurrent requests must share pending load.');
+ scripts[0].onerror();await assert.rejects(p1,/Gagal memuat/);
+ assert.equal(scripts.length,0,'Failed script must be removed.');
+ const p2=loadSrc('assets/a.js');assert.equal(scripts.length,1,'Failed load must be retryable.');
+ scripts[0].onload();await p2;
+ await loadSrc('assets/a.js');assert.equal(scripts.length,1,'Successful load must be reused.');
+ const p3=loadSrc('assets/slow.js');assert.equal(scripts.length,2);
+ const timer=timers[timers.length-1];assert.equal(timer.ms,20000);timer.fn();await assert.rejects(p3,/Timeout/);
+ const p4=loadSrc('assets/slow.js');assert.equal(scripts.length,2,'Timeout must not poison future loads.');scripts[1].onload();await p4;
+ console.log('RUNTIME_LOADER_RECOVERY_CONTRACT_PASS');
+})().catch(e=>{console.error(e);process.exitCode=1});

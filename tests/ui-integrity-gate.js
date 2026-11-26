@@ -32,7 +32,7 @@ assert.ok(planning.includes('await GEStore.flush()'),'Record changes must persis
 assert.ok(sharedCss.includes('background:rgba(6,24,51,.64)'),'Canonical planning/confirmation overlay requires a dedicated backdrop');
 assert.ok(portalCss.includes('.ge-master-tabs-panel{min-height:0'),'Master Data tabs must override inherited dashboard min-height');
 assert.ok(registry.includes('ge-panel ge-master-tabs-panel'),'Master Data tab group must have a semantic compact class');
-assert.ok(sharedCss.includes('--ui-control-h:42px;')&&sharedCss.includes('--ui-button-weight:600;'),'Shared button geometry must have one central token set');
+assert.ok((sharedCss.match(/--ui-control-h\s*:/g)||[]).length===1&&sharedCss.includes('--ui-control-h:44px;')&&sharedCss.includes('--ui-button-weight:600;'),'Shared button geometry must have one central token set');
 assert.ok(!portalCss.includes('.planning-dialog-body-level .planning-modal'),'Old Planning modal rules must be removed, not layered');
 
 // Canonical replacement cleanup guard: runtime assets and current behavior must not regress to patch/version identities.

@@ -186,7 +186,7 @@ async function shell(){
  refs.top.innerHTML=`<button id="mobileNavTrigger" class="mobile-nav-trigger ge-iconbtn" type="button" aria-label="Menu">☰</button>
  <div class="ge-brand-logos"><img class="garuda" src="assets/garuda-horizontal-white.png" alt="Garuda Indonesia"><img class="danantara" src="assets/danantara-white-user.png" alt="Danantara Indonesia"></div>
  <div class="ge-title"><strong>GROUND EXPERIENCE PORTAL</strong><span>${context}</span></div>
- <div class="ge-session"><label class="filter"><span>Period</span><select id="gePeriodSelect" aria-label="Period"></select></label><button class="ge-top-action ge-notify" id="geNotifyBtn" type="button" title="Notifications" aria-label="Notifications"><span class="bell-shape"></span><b class="ge-notify-badge" id="geNotifyBadge" hidden></b></button><a class="ge-top-action ge-help" href="kontak.html" title="Help" aria-label="Help">?</a><button class="ge-user-menu" id="geUserMenuBtn" type="button" aria-expanded="false" aria-haspopup="menu"><span class="avatar">${initials}</span><span class="who"><b>${s.name||s.username||'User'}</b><span>${roleLabel}</span></span></button><div class="ge-user-pop" id="geUserPop" role="menu"><a href="profile.html" role="menuitem">Profile</a><button type="button" id="geMenuNotifications" role="menuitem">Notifications</button><button type="button" id="geLogoutBtn" role="menuitem">Sign Out</button></div><div class="ge-notify-pop" id="geNotifyPop" role="dialog" aria-label="Notifications"><div class="ge-pop-head"><b>Notifications</b><button type="button" id="geNotifyClose" aria-label="Close">×</button></div><div id="geNotifyList" class="ge-notify-list"></div></div></div>`;
+ <div class="ge-session"><div class="filter ge-period-filter"><label for="gePeriodSelect">Period</label><select id="gePeriodSelect" aria-label="Period"><option value="all">All Periods</option><option value="single">Single Year</option><option value="range">Year Range</option></select><select id="gePeriodStart" aria-label="Start Year" hidden></select><select id="gePeriodEnd" aria-label="End Year" hidden></select></div><button class="ge-top-action ge-notify" id="geNotifyBtn" type="button" title="Notifications" aria-label="Notifications"><span class="bell-shape"></span><b class="ge-notify-badge" id="geNotifyBadge" hidden></b></button><a class="ge-top-action ge-help" href="kontak.html" title="Help" aria-label="Help">?</a><button class="ge-user-menu" id="geUserMenuBtn" type="button" aria-expanded="false" aria-haspopup="menu"><span class="avatar">${initials}</span><span class="who"><b>${s.name||s.username||'User'}</b><span>${roleLabel}</span></span></button><div class="ge-user-pop" id="geUserPop" role="menu"><a href="profile.html" role="menuitem">Profile</a><button type="button" id="geMenuNotifications" role="menuitem">Notifications</button><button type="button" id="geLogoutBtn" role="menuitem">Sign Out</button></div><div class="ge-notify-pop" id="geNotifyPop" role="dialog" aria-label="Notifications"><div class="ge-pop-head"><b>Notifications</b><button type="button" id="geNotifyClose" aria-label="Close">×</button></div><div id="geNotifyList" class="ge-notify-list"></div></div></div>`;
  refs.side.innerHTML=navFor(s);
  if(typeof gxApplyNavigation==='function')gxApplyNavigation();
  cleanNavigation();
@@ -202,31 +202,74 @@ function setupAccountControls(s){
  const list=document.getElementById('geNotifyList'),badge=document.getElementById('geNotifyBadge');
  const notifications=()=>{try{const d=window.GEStore?.get?.()||{},uid=String(s?.uid||s?.id||'');return (Array.isArray(d.inbox)?d.inbox:[]).filter(x=>String(x.recipientId||'')===uid).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')))}catch{return[]}};
  const notice=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
- const notificationUnread=x=>(x.notificationStatus||x.status||'Unread')==='Unread';
+ const notificationUnread=x=>x.notificationStatus==='Read'||['Read','Handled'].includes(x.status)?false:true;
  const notificationTarget=x=>{const ref=x.referenceId||x.relatedId||'';if(x.destination)return x.destination;if(x.relatedType==='contactMessages')return `app.html?page=admin&support=${encodeURIComponent(ref)}`;if(['Initiative','Milestone'].includes(x.referenceType))return `app.html?page=inisiatif&initiative=${encodeURIComponent(ref)}${x.milestoneIndex!==undefined&&x.milestoneIndex!==''?'&milestone='+encodeURIComponent(x.milestoneIndex):''}`;return `app.html?page=admin&inbox=${encodeURIComponent(x.id)}`};
- const renderNotifications=()=>{const rows=notifications(),unread=rows.filter(notificationUnread).length;if(nb)nb.hidden=!rows.length;if(document.getElementById('geMenuNotifications'))document.getElementById('geMenuNotifications').hidden=!rows.length;if(!rows.length)np?.classList.remove('open');if(badge){badge.textContent=unread>99?'99+':String(unread);badge.hidden=!unread}if(!list)return;list.style.maxHeight='60vh';list.style.overflowY='auto';list.innerHTML=rows.length?rows.map(x=>`<button type="button" class="ge-notify-item" data-notify-id="${notice(x.id)}"><b>${notice(x.subject||x.title||x.type||'Notification')}</b><span>${notice(x.message||x.detail||'')}</span></button>`).join(''):'<div class="ge-notify-empty">No notifications available.</div>';
- list.querySelectorAll('[data-notify-id]').forEach(b=>b.onclick=async()=>{const x=rows.find(v=>String(v.id)===b.dataset.notifyId);if(!x)return;const dest=notificationTarget(x);if(notificationUnread(x)){try{await window.GEStore.markInboxRead(x.id,'notification');renderNotifications()}catch(err){renderNotifications();const warning=document.createElement('p');warning.setAttribute('role','alert');warning.className='ge-notify-error';warning.textContent='Status notifikasi belum tersimpan: '+(err.message||err);list.prepend(warning);return}}(window.gePortalNavigate?window.gePortalNavigate(dest):location.assign(dest))})};
+ const renderNotifications=()=>{const rows=notifications().filter(notificationUnread),unread=rows.length;if(nb)nb.hidden=!rows.length;if(document.getElementById('geMenuNotifications'))document.getElementById('geMenuNotifications').hidden=!rows.length;// Opening the panel does not mark notifications as read.
+ if(badge){badge.textContent=unread>99?'99+':String(unread);badge.hidden=!unread}if(!list)return;list.style.maxHeight='60vh';list.style.overflowY='auto';list.innerHTML=rows.length?rows.map(x=>`<button type="button" class="ge-notify-item" data-notify-id="${notice(x.id)}"><b>${notice(x.subject||x.title||x.type||'Notification')}</b><span>${notice(x.message||x.detail||'')}</span></button>`).join(''):'<div class="ge-notify-empty">No notifications available.</div>';
+ list.querySelectorAll('[data-notify-id]').forEach(b=>b.onclick=()=>{
+  const x=rows.find(v=>String(v.id)===b.dataset.notifyId);if(!x)return;
+  const dest=notificationTarget(x);
+  b.disabled=true;
+  // Route immediately; the async read acknowledgement remains tied to this account.
+  if(notificationUnread(x))window.GEStore?.markInboxRead(x.id,'notification').then(renderNotifications).catch(err=>console.warn('[Notification read]',err));
+  np?.classList.remove('open');
+  if(window.gePortalNavigate)void window.gePortalNavigate(dest);else location.assign(dest);
+ })};
  const closeAll=()=>{up?.classList.remove('open');np?.classList.remove('open');umb?.setAttribute('aria-expanded','false')};
+ const closeOutside=event=>{if(event.target.closest?.('#geNotifyPop,#geNotifyBtn,#geUserPop,#geUserMenuBtn'))return;closeAll()};
  umb?.addEventListener('click',e=>{e.stopPropagation();np?.classList.remove('open');up?.classList.toggle('open');umb.setAttribute('aria-expanded',up.classList.contains('open')?'true':'false')});
- nb?.addEventListener('click',async e=>{e.stopPropagation();up?.classList.remove('open');np?.classList.toggle('open');try{await window.GEStore?.hydrate?.(['inbox'])}catch(err){console.warn('[Notifications]',err)}renderNotifications()});
+ nb?.addEventListener('click',async e=>{e.stopPropagation();up?.classList.remove('open');const opening=!np?.classList.contains('open');np?.classList.toggle('open',opening);if(!opening)return;if(!notifications().length){try{await window.GEStore?.hydrate?.(['inbox'])}catch(err){console.warn('[Notifications]',err)}}renderNotifications();np?.classList.add('open')});
  nc?.addEventListener('click',closeAll);
  document.getElementById('geMenuNotifications')?.addEventListener('click',e=>{e.stopPropagation();up?.classList.remove('open');np?.classList.add('open');renderNotifications()});
  document.getElementById('geLogoutBtn')?.addEventListener('click',()=>gxLogout());
- document.addEventListener('click',closeAll,{capture:true});
+ document.addEventListener('click',closeOutside,{capture:true});
  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeAll()});
  window.addEventListener('gx-inbox-ready',renderNotifications);
  renderNotifications();
 }
 window.gePortalRefreshShellState=function(){cleanNavigation();planningTabs();sidebarToggle();};
 function setupPeriodControl(){
- const sel=document.getElementById('gePeriodSelect');if(!sel)return;
+ const sel=document.getElementById('gePeriodSelect');
+ const from=document.getElementById('gePeriodStart');
+ const to=document.getElementById('gePeriodEnd');
+ if(!sel||!from||!to)return;
+ const current=new Date().getFullYear();
  const years=new Set();
- try{const d=window.GEStore?.get?.()||{};[...(d.initiatives||[]),...(d.budgets||[]),...(d.actuals||[]),...(d.measurements||[])].forEach(x=>{const raw=x.periodStart||x.period||x.year||x.date||x.updatedAt||x.createdAt;const m=String(raw||'').match(/(20\d{2})/);if(m)years.add(m[1])})}catch(e){}
- if(!years.size)years.add(String(new Date().getFullYear()));
- const ordered=[...years].sort((a,b)=>Number(b)-Number(a));sel.innerHTML=ordered.map(y=>`<option value="${y}">${y}</option>`).join('');
- let saved='';try{saved=(localStorage.getItem('GE_DASHBOARD_PERIOD') ?? localStorage.getItem('GE_V257_DASHBOARD_PERIOD'))||''}catch(e){};if(saved&&ordered.includes(saved))sel.value=saved;
- sel.addEventListener('change',()=>{try{localStorage.setItem('GE_DASHBOARD_PERIOD',sel.value)}catch(e){};document.dispatchEvent(new CustomEvent('ge-dashboard-period-change',{detail:{year:sel.value}}))});
+ for(let year=current-5;year<=current+10;year++)years.add(year);
+ try{
+  const d=window.GEStore?.get?.()||{};
+  [...(d.initiatives||[]),...(d.budgets||[]),...(d.actuals||[])].forEach(row=>{
+   [row.planningYear,row.year,row.periodStart,row.periodEnd,row.startDate,row.endDate].forEach(raw=>{
+    (String(raw??'').match(/20\d{2}/g)||[]).forEach(year=>years.add(Number(year)));
+   });
+  });
+ }catch(e){console.warn('[Period options]',e)}
+ const ordered=[...years].sort((a,b)=>b-a);
+ from.replaceChildren(...ordered.map(year=>new Option(String(year),String(year))));
+ to.replaceChildren(...ordered.map(year=>new Option(String(year),String(year))));
+ // All Periods is always the initial reporting view; saved legacy filters never hide imported records.
+ sel.value='all';from.value=String(current);to.value=String(current);
+ function selectedPeriod(){
+  if(sel.value==='all')return null;
+  const start=Number(from.value),end=sel.value==='range'?Number(to.value):start;
+  return {start,end,year:start,years:Array.from({length:end-start+1},(_,i)=>start+i),mode:sel.value};
+ }
+ window.geSelectedPortalPeriod=selectedPeriod;
+ function update(){
+  from.hidden=sel.value==='all';to.hidden=sel.value!=='range';
+  if(sel.value==='range'&&Number(to.value)<Number(from.value))to.value=from.value;
+  if(sel.value==='range'&&Number(from.value)>Number(to.value))from.value=to.value;
+  // Retain compatibility with legacy dashboard period listeners without restoring an old default.
+  try{localStorage.setItem('GE_DASHBOARD_PERIOD_RANGE',sel.value==='all'?'all':sel.value==='range'?`${from.value}:${to.value}`:from.value)}catch(e){}
+  document.dispatchEvent(new CustomEvent('ge-dashboard-period-change',{detail:selectedPeriod()}));
+ }
+ sel.addEventListener('change',update);
+ from.addEventListener('change',update);
+ to.addEventListener('change',update);
+ from.hidden=true;to.hidden=true;
 }
+
+
 
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{shell()}, {once:true});else shell();
 })();

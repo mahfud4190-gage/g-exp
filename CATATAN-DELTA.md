@@ -1,0 +1,43 @@
+# Delta runtime dan upload
+
+Ekstrak isi ZIP ke root branch main dengan baseline gage-portal-test-1.zip. Delta bersifat kumulatif dan sudah mencakup perubahan Page Audit sebelumnya. Simpan catatan ini di luar repositori jika diinginkan.
+
+- Portal memuat modul penyimpanan lampiran saat aksi file digunakan. Error startup mencantumkan tahap autentikasi, modul, atau data dan menyediakan Coba lagi.
+- Master Data memuat koleksi awal dalam satu permintaan, tanpa sinkronisasi katalog otomatis pada pembukaan halaman. Impor Jenis & Referensi menampilkan preview dan menghitung baris tersimpan setelah API merespons. ID & Master Referensi tetap mengikuti pengelolaan yang tersedia pada modulnya.
+- Jalur import lama memakai parser sesuai jenis file/data. Lounge/Tenant menggunakan template resmi P29 dan membuka preview pada dialog yang sama. Station Material, Airport Cost dan Standards / Reference memakai kolom yang selaras dengan template. Import Flight Schedule memakai koleksi portalData/flightSchedule/records dan penyaringan stasiun keberangkatan/tujuan sesuai akses.
+- Upload Initiative dan User & Access diinisialisasi kembali saat rute dibuka. Import Airport hanya mengubah rekor dalam file, tanpa menomori ulang seluruh master.
+- Program Kerja masih membutuhkan pemetaan data lama ke Firestore dan integrasi Budget & Cost. Tidak ada migrasi otomatis.
+
+## Verifikasi lokal
+
+npm run build lulus, termasuk pengaman penghapusan dan loader recovery. Uji simulasi DOM mencakup 68 rute dan 21 perpindahan pada tab yang sama. Contoh CSV/XML workbook diuji pada Master Data, Airport, Personnel, tiga jenis GASO, Branch Office Space & Building dan Airport Systems, Lounge/Tenant, Lounge Visitor, Lounge Flights, Station Material, Airport Cost, SkyTeam, Initiative, dan User & Access. Permintaan simpan diarahkan ke API simulasi. Simulasi HTTP 503 pada Lounge/Tenant menampilkan pesan gagal pada dialog dan percobaan ulang mempertahankan ID. Firestore produksi, waktu aktual Netlify, akun nyata dan performa browser riil belum diuji.
+
+## Overlay dan template Lounge/Tenant
+
+Delta ini mencakup seluruh perubahan Runtime & Upload sebelumnya. Dialog portal mendapat ukuran viewport penuh pada densitas desktop dan mobile. Skala desktop untuk konten portal berasal dari aturan densitas yang sudah ada. Hasil visual di deploy belum diverifikasi.
+
+Lounge/Tenant menggunakan Template_Layanan_Lounge_Tenant_P29.csv. Importer menerima nama kolom versi sebelumnya (misalnya airport dan serviceCategory), koma atau titik koma, dan menyebut kolom wajib saat header tidak sesuai. Uji lokal mencakup template P29 asli yang diisi satu baris, template lama, dan CSV titik koma dengan tanggal serial. Ketiganya menampilkan hasil dan menjalankan POST CREATE terhadap API simulasi. Perubahan parser ini berlaku pada Lounge/Tenant.
+
+## Ukuran dialog dan penyimpanan impor
+
+Backdrop memenuhi viewport. Kartu dialog mengikuti skala portal desktop dan tetap dipusatkan. Petunjuk Lounge/Tenant memakai bahasa Indonesia yang ringkas dan menyediakan tautan unduh template dalam dialog.
+
+Jika Firebase Admin belum dikonfigurasi, permintaan ditolak sebelum operasi penulisan. Import Lounge/Tenant menampilkan pesan yang sesuai dan menjaga data percobaan di luar daftar sampai server mengonfirmasi simpan. Percobaan ulang menggunakan ID yang sama.
+
+Pada site Netlify yang mengalami error, cek Project configuration > Environment variables. Isi FIREBASE_SERVICE_ACCOUNT_JSON menggunakan service account project Firebase portal. Kode juga mendukung kombinasi FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, dan FIREBASE_PRIVATE_KEY. Aktifkan untuk Functions pada konteks deploy yang digunakan, lalu buat deploy baru. Simpan nilai hanya di pengaturan Netlify.
+
+Verifikasi lokal: build lulus. Simulasi kredensial hilang memastikan dialog tetap terbuka, perjanjian belum masuk daftar, dan retry mempertahankan ID. Geometri dialog dan konfigurasi penyimpanan pada Netlify belum diverifikasi.
+
+## Paginasi dan Actions
+
+Planning Workspace memakai satu navigasi yang menghitung semua hasil filter. Grid dan Details memakai halaman, urutan, serta jumlah baris 10/20/50 yang sama. Pengurutan Planning diterapkan sebelum pemotongan halaman. Form Management dan Service Experience sudah memiliki paginasi masing-masing dan tetap memakai paginasi tersebut.
+
+Runtime tabel bersama mengenali kolom Actions, Aksi, Kelola, dan Tindakan, termasuk pada tabel dengan paginasi sendiri. Tombol ringkas tersusun mendatar, dengan ruang berdasarkan isi kolom dan scroll horizontal pada pembungkus tabel yang sudah tersedia. Kolom tindakan tidak diurutkan. Tidak ada perubahan pada izin atau operasi data dari pembaruan tabel ini.
+
+Build lulus. Simulasi 48 data memeriksa satu navigasi, perubahan 10/20 data per halaman, filter, dan Actions. Pemeriksaan rute lokal mencakup 68 rute dan 21 perpindahan dalam satu tab. Ukuran final pada browser dan deploy belum diverifikasi.
+
+## Tipografi field
+
+Isi input, select, textarea dan kontrol pilih/cari yang dimodelkan sebagai field memakai satu aturan dari portal.css. Font memakai stack portal Inter, Segoe UI, Arial, sans-serif, ukuran 14 px, bobot 400, dan line-height 1,35. Placeholder memakai ukuran/jenis font yang sama dengan warna pembeda. Tombol biasa, label, dan panduan mempertahankan hierarki tipografinya.
+
+Aturan lokal yang menduplikasi tipografi field dibersihkan dari portal.css, global-ui-canonical.css dan checklist-share.css. Akibatnya harga utama dan input periode tarif di Planning, serta isi filter, form akun, login dan checklist, memakai dasar yang sama. Build lulus. Pengukuran visual di browser dan deploy belum diuji.

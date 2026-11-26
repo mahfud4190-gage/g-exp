@@ -12,7 +12,7 @@
   ];
   const links=Object.fromEntries(groups.map(([id,,href])=>[id,href]));
   const hierarchy=[
-    {id:'service',name:'Service & Provider',children:[['Lounge / Tenant / Snack Box','app.html?page=lounge-list'],['Ground Handling Agent'],['Airport Operator'],['Other Services']]},
+    {id:'service',name:'Service & Provider',children:[['Lounge / Tenant / Snack Box','app.html?page=lounge-list'],['Ground Handling Agent','app.html?page=service-provider&category=GHA'],['Airport Operator','app.html?page=service-provider&category=AIRPORT_OPERATOR'],['Catering Provider','app.html?page=service-provider&category=CATERING'],['Other Services']]},
     {id:'space',name:'Space & Building',children:[['Perkantoran'],['Layanan'],['Other Space / Building']]},
     {id:'material',name:'Station Material, Tools & Equipment',children:[['Dokumen'],['Label'],['Tools'],['Equipment'],['Other']]},
     {id:'system',name:'Airport Systems',children:[['Hardware'],['Software'],['Other']]},
@@ -36,7 +36,7 @@
       provider:str(x.provider||x.vendor||x.partner||x.reference||x.documentNumber||x.agreement||''),status:str(x.status||x.contractStatus||x.availability||''),id:x.id};
   }
   function collect(d){const list=[];function add(coll,key,kind){(d[coll]||[]).forEach(x=>list.push(make(key,kind,x)))}
-    add('lounges','service','Lounge / Tenant / Snack Box');add('serviceProcurement','service','Service Procurement');
+    add('lounges','service','Lounge / Tenant / Snack Box');add('groundHandlers','service','Ground Handling Agent');add('serviceProcurement','service','Service Procurement');
     add('boSpaces','space','Space & Building');add('stationMaterials','material','Station Material');
     add('airportSystems','system','Airport System');add('documents','document','Planning Document');
     add('gasoMaster','gaso','GASO Office');add('gasoServiceSupport','gaso','Service Support');add('gasoPlanningService','gaso','Planning Service');
@@ -65,7 +65,7 @@
   }
   async function init(){const main=document.querySelector('body > .shell > .main')||document.querySelector('main');if(!main)return;const hero=main.querySelector('.ge-page-head,.hero');(hero||main.firstElementChild)?.insertAdjacentElement('afterend',host);
     ['portfolioArea','portfolioStation','portfolioGroup','portfolioQuery'].forEach(id=>$(id).addEventListener(id==='portfolioQuery'?'input':'change',()=>{if(id==='portfolioGroup')selectedChild='';render()}));
-    try{await GEStore.waitAuth();const d=await GEStore.hydrate(['lounges','serviceProcurement','boSpaces','stationMaterials','airportSystems','documents','gasoMaster','gasoServiceSupport','gasoPlanningService','airports','referenceCatalog']);all=collect(d);catalog=d.referenceCatalog||[];const stations=[...new Set((d.airports||[]).map(x=>String(x.code||x.airportCode||x.iata||x.stationCode||'').toUpperCase()).concat(all.map(x=>x.station.toUpperCase())).filter(x=>x&&!x.includes(',')))].sort();$('portfolioStation').innerHTML='<option value="">Semua lokasi</option>'+stations.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');render()}
+    try{await GEStore.waitAuth();const d=await GEStore.hydrate(['lounges','groundHandlers','serviceProcurement','boSpaces','stationMaterials','airportSystems','documents','gasoMaster','gasoServiceSupport','gasoPlanningService','airports','referenceCatalog']);all=collect(d);catalog=d.referenceCatalog||[];const stations=[...new Set((d.airports||[]).map(x=>String(x.code||x.airportCode||x.iata||x.stationCode||'').toUpperCase()).concat(all.map(x=>x.station.toUpperCase())).filter(x=>x&&!x.includes(',')))].sort();$('portfolioStation').innerHTML='<option value="">Semua lokasi</option>'+stations.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');render()}
     catch(e){$('portfolioRows').innerHTML='<tr><td colspan="7">Data belum dapat dimuat. Coba buka kembali halaman.</td></tr>';$('portfolioStatus').textContent=e.message}
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();

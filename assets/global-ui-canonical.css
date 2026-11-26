@@ -10,9 +10,10 @@
   --ui-soft:#f5f8fb;
   --ui-danger:#b42318;
   --ui-danger-hover:#8f1d14;
-  --ui-control-h:42px;
+  --ui-control-h:44px;
+  --ui-gap:10px;
   --ui-compact-h:34px;
-  --ui-radius:9px;
+  --ui-radius:10px;
   --ui-button-font:13px;
   --ui-button-weight:600;
   --ui-shadow:0 14px 28px rgba(6,43,89,.14);
@@ -27,12 +28,7 @@
 }
 
 /* Typography and shared fields */
-html body #cleanPageOutlet,
-html body #cleanPageOutlet input,
-html body #cleanPageOutlet select,
-html body #cleanPageOutlet textarea,
-html body #cleanPageOutlet button,
-html body #cleanPageOutlet table{font-family:inherit}
+html body #cleanPageOutlet,html body #cleanPageOutlet button,html body #cleanPageOutlet table{font-family:inherit}
 html body #cleanPageOutlet label,
 html body .modal-card label,
 html body .planning-modal label,
@@ -48,10 +44,10 @@ html body .planning-modal select,
 html body .planning-modal textarea,
 html body .lounge-add-modal input:not([type="checkbox"]):not([type="radio"]),
 html body .lounge-add-modal select,
+html body .ge-checklist-share-dialog :is(input,select),
 html body .lounge-add-modal textarea{
   box-sizing:border-box;width:100%;min-height:var(--ui-control-h);height:var(--ui-control-h);margin-top:0;padding:0 12px;
-  border:1px solid var(--ui-border);border-radius:var(--ui-radius);background:#fff;color:var(--ui-text);
-  font-family:inherit;font-size:13px;font-weight:400;line-height:1.35;text-align:left;outline:0;box-shadow:none;
+  border:1px solid var(--ui-border);border-radius:var(--ui-radius);background:#fff;color:var(--ui-text);text-align:left;outline:0;box-shadow:none;
 }
 html body #cleanPageOutlet textarea,
 html body .modal-card textarea,
@@ -64,7 +60,7 @@ html body .modal-card textarea::placeholder,
 html body .planning-modal input::placeholder,
 html body .planning-modal textarea::placeholder,
 html body .lounge-add-modal input::placeholder,
-html body .lounge-add-modal textarea::placeholder{color:#91a2b5;opacity:1;font-weight:400}
+html body .lounge-add-modal textarea::placeholder{color:#91a2b5;opacity:1;}
 html body #cleanPageOutlet input:not([type="checkbox"]):not([type="radio"]):focus,
 html body #cleanPageOutlet select:focus,
 html body #cleanPageOutlet textarea:focus,
@@ -96,7 +92,7 @@ html body .lounge-add-modal select:not([multiple]){
 }
 html body #cleanPageOutlet select[multiple]{height:auto;min-height:90px;padding:8px 10px;text-align:left}
 html body #cleanPageOutlet option,html body .modal-card option,html body .planning-modal option,html body .lounge-add-modal option{text-align:left}
-html body #cleanPageOutlet button,html body #cleanPageOutlet .btn,html body #cleanPageOutlet .ge-btn{overflow:hidden;text-overflow:ellipsis}
+html body #cleanPageOutlet :is(button,.btn,.ge-btn):not(:where(.ge-table-action-cell *)){overflow:hidden;text-overflow:ellipsis}
 html body #cleanPageOutlet select:has(option:checked[value=""]){color:#91a2b5}
 html body #cleanPageOutlet select:has(option:checked[value=""]) option{color:var(--ui-text)}
 
@@ -124,12 +120,52 @@ html body .btn:disabled,html body .ge-btn:disabled,
 html body .btn[aria-disabled="true"],html body .ge-btn[aria-disabled="true"]{opacity:.5;cursor:not-allowed;transform:none}
 html body .btn:focus-visible,html body .ge-btn:focus-visible{outline:2px solid rgba(8,43,89,.22);outline-offset:2px}
 /* Production shell used smaller legacy button typography. Override its geometry here, once. */
-html body.portal-ready.portal-shell-ready .ge-btn{height:var(--ui-control-h);min-height:var(--ui-control-h);font-family:inherit;font-size:var(--ui-button-font);font-weight:var(--ui-button-weight);line-height:1.2}
-html body.portal-ready.portal-shell-ready .ge-btn.compact{height:var(--ui-compact-h);min-height:var(--ui-compact-h);font-size:12.5px;font-weight:500}
+html body.portal-ready.portal-shell-ready .ge-btn:not(:where(.compact,.ge-table-action-cell *)){height:var(--ui-control-h);min-height:var(--ui-control-h);font-family:inherit;font-size:var(--ui-button-font);font-weight:var(--ui-button-weight);line-height:1.2}
 
-html body .btn.compact,html body .ge-btn.compact,
-html body .row-actions .btn,html body .row-actions .ge-btn,
-html body td .btn,html body td .ge-btn{min-height:var(--ui-compact-h);height:var(--ui-compact-h);padding:0 11px;font-size:12.5px;font-weight:500;border-radius:7px}
+html body :is(.btn.compact,.ge-btn.compact,.row-actions .btn,.row-actions .ge-btn,td .btn,td .ge-btn):not(:where(.ge-table-action-cell *)){min-height:var(--ui-compact-h);height:var(--ui-compact-h);padding:0 11px;font-size:12.5px;font-weight:500;border-radius:7px}
+
+/* Table actions keep their labels at intrinsic width. */
+.ge-table-action-scroll {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow-x: auto;
+}
+html body table :is(th.ge-table-action-heading,td.ge-table-action-cell) {
+  width: 1%;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+html body table td.ge-table-action-cell {
+  display: table-cell;
+  padding-block: 6px;
+}
+html body table .ge-table-action-cell > .ge-table-action-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  inline-size: max-content;
+  margin: 0;
+  padding: 0;
+  vertical-align: middle;
+}
+html body table td.ge-table-action-cell :is(button,a[href],input[type="submit"]) {
+  flex: 0 0 auto;
+  inline-size: max-content;
+  min-inline-size: max-content;
+  max-inline-size: none;
+  block-size: auto;
+  min-block-size: var(--ui-compact-h);
+  padding: 4px 10px;
+  margin: 0;
+  overflow: visible;
+  text-overflow: clip;
+  font-size: var(--ui-button-font);
+  font-weight: var(--ui-button-weight);
+  line-height: 1.2;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+html body table td.ge-table-action-cell form {margin:0}
 
 /* Integrated searchable controls; no detached browser-looking button. */
 html body .ge-combo-r12,html body .ge-ref-combo,html body .ge-searchable,html body .search-filter-combo{position:relative;width:100%;min-width:0}
@@ -141,14 +177,14 @@ html body #cleanPageOutlet .search-filter-toggle::after{content:"";position:abso
 html body .ge-combo-toggle-r12:hover,html body .ge-ref-combo-toggle:hover,
 html body #cleanPageOutlet .search-filter-toggle:hover{background:var(--ui-soft)}
 html body #cleanPageOutlet .search-filter-combo>select{display:none}
-html body #cleanPageOutlet .search-filter-input{width:100%;height:var(--ui-control-h);min-height:var(--ui-control-h);margin:0;padding:0 40px 0 12px;border:1px solid var(--ui-navy);border-radius:var(--ui-radius);background:#fff;color:var(--ui-text);font:400 13px/1.2 inherit;box-sizing:border-box}
+html body #cleanPageOutlet .search-filter-input{width:100%;height:var(--ui-control-h);min-height:var(--ui-control-h);margin:0;padding:0 40px 0 12px;border:1px solid var(--ui-navy);border-radius:var(--ui-radius);background:#fff;color:var(--ui-text);box-sizing:border-box}
 html body #cleanPageOutlet .search-filter-menu{display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:30000;max-height:260px;overflow:auto;background:#fff;border:1px solid var(--ui-navy);border-radius:var(--ui-radius);box-shadow:var(--ui-shadow);padding:4px}
 html body #cleanPageOutlet .search-filter-combo.open .search-filter-menu{display:grid}
-html body #cleanPageOutlet .search-filter-option{width:100%;height:34px;border:0;border-radius:5px;background:#fff;color:var(--ui-text);text-align:left;font:400 13px/1.2 inherit;cursor:pointer}
+html body #cleanPageOutlet .search-filter-option{width:100%;height:34px;border:0;border-radius:5px;background:#fff;color:var(--ui-text);text-align:left;cursor:pointer}
 html body #cleanPageOutlet .search-filter-option:hover,html body #cleanPageOutlet .search-filter-option.selected{background:#eef4fa;color:var(--ui-navy)}
-html body .ge-searchable-trigger,html body .ge-station-trigger{box-sizing:border-box;width:100%;height:var(--ui-control-h);min-height:var(--ui-control-h);padding:0 38px 0 12px;border:1px solid var(--ui-border);border-radius:var(--ui-radius);background:#fff;color:var(--ui-text);font:400 13px/1.35 inherit;position:relative;text-align:left;cursor:pointer}
+html body .ge-searchable-trigger,html body .ge-station-trigger{box-sizing:border-box;width:100%;height:var(--ui-control-h);min-height:var(--ui-control-h);padding:0 38px 0 12px;border:1px solid var(--ui-border);border-radius:var(--ui-radius);background:#fff;color:var(--ui-text);position:relative;text-align:left;cursor:pointer}
 html body .ge-searchable-trigger.is-placeholder{color:#91a2b5}
-html body .ge-searchable-trigger::after,html body .ge-station-trigger i{content:"";position:absolute;right:13px;top:50%;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid var(--ui-navy);transform:translateY(-30%);font-size:0}
+html body .ge-station-trigger i{content:"";position:absolute;right:13px;top:50%;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid var(--ui-navy);transform:translateY(-30%);font-size:0}html body .ge-searchable-trigger::after{content:"";position:absolute;right:13px;top:50%;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid var(--ui-navy);transform:translateY(-30%);}
 html body .ge-searchable-menu,html body .ge-station-menu{display:none;position:absolute;left:0;right:0;top:calc(100% + 5px);z-index:120000;max-height:300px;overflow:auto;padding:8px;background:#fff;border:1px solid var(--ui-border);border-radius:var(--ui-radius);box-shadow:var(--ui-shadow)}
 html body .ge-searchable.is-open .ge-searchable-menu,html body .ge-station-menu.show{display:block}
 html body .ge-searchable-menu input{width:100%;height:36px;min-height:36px;margin:0 0 7px;padding:0 10px}
@@ -205,8 +241,8 @@ html body #cleanPageOutlet .ge-network-toolbar>label{display:grid;grid-template-
 html body #cleanPageOutlet .ge-submission-toolbar{display:grid;grid-template-columns:repeat(5,minmax(130px,1fr)) auto;gap:10px;align-items:center}
 html body #cleanPageOutlet .ge-submission-toolbar>*{height:var(--ui-control-h);min-height:var(--ui-control-h);margin:0}
 html body #cleanPageOutlet .ge-table-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 0 10px;color:#718296;font-size:12px}
-html body #cleanPageOutlet .ge-table-controls label{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:400;color:#718296}
-html body #cleanPageOutlet .ge-table-controls select{width:auto;min-width:62px;height:var(--ui-compact-h);min-height:var(--ui-compact-h);margin:0;padding:0 30px 0 9px;font-size:12px}
+html body #cleanPageOutlet .ge-table-controls label{display:flex;align-items:center;gap:12px;font-size:12px;font-weight:400;color:#718296}
+html body #cleanPageOutlet .ge-table-controls select{width:auto;min-width:62px;height:var(--ui-compact-h);min-height:var(--ui-compact-h);margin:0;padding:0 30px 0 9px;}
 html body #cleanPageOutlet .ge-table-nav{display:flex;align-items:center;gap:7px}
 html body #cleanPageOutlet .ge-table-nav button{width:32px;height:32px;min-height:32px;padding:0;border:1px solid #c9d5e1;border-radius:7px;background:#fff;color:var(--ui-navy);font-size:18px;cursor:pointer}
 html body #cleanPageOutlet .ge-table-nav button:disabled{opacity:.4;cursor:not-allowed}
@@ -215,7 +251,7 @@ html body #cleanPageOutlet .ge-table-nav button:disabled{opacity:.4;cursor:not-a
 html body.portal-app.portal-shell .ge-title span{font-size:12px;line-height:1.2;color:#dbe8f7;font-weight:400;letter-spacing:0;opacity:1}
 html body.portal-app.portal-shell .ge-session .filter{height:40px;min-width:132px;padding:0 10px;border:1px solid rgba(255,255,255,.45);border-radius:8px;background:rgba(255,255,255,.06)}
 html body.portal-app.portal-shell .ge-session .filter span{font-size:11px;color:#dbe8f7;font-weight:500}
-html body.portal-app.portal-shell .ge-session .filter select{height:38px;min-height:38px;min-width:58px;font-size:13px;font-weight:600;color:#fff;border:0;outline:0;background:transparent;padding:0 14px 0 0}
+html body.portal-app.portal-shell .ge-session .filter select{height:38px;min-height:38px;min-width:58px;color:#fff;border:0;outline:0;background:transparent;padding:0 14px 0 0}
 
 /* Lounge/Tenant and Planning reuse the global controls; only layout is scoped. */
 html body .lounge-master-card,html body .planning-domain-card{border:1px solid #d6e0e9;border-radius:10px;background:#fff;box-shadow:0 5px 16px rgba(20,50,75,.06)}
@@ -313,17 +349,13 @@ html body>.initiative-dialog .ge-picker-pop{z-index:2147482500}
 /* Shared table behavior. */
 #cleanPageOutlet .table-wrap,#cleanPageOutlet .table-scroll,#cleanPageOutlet .ge-table-wrap,#cleanPageOutlet .ge-initiative-list,#cleanPageOutlet .ge-table-scroll-runtime{max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain}
 #cleanPageOutlet .table-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 10px;font-size:12px;color:var(--ui-muted)}
-#cleanPageOutlet .table-size-control,#cleanPageOutlet .table-page-control{display:flex;align-items:center;gap:8px}
-#cleanPageOutlet .table-size-control select{width:auto;min-width:68px;height:34px;min-height:34px;padding:0 30px 0 10px;font-size:12px}
+#cleanPageOutlet .table-size-control,#cleanPageOutlet .table-page-control{display:flex;align-items:center;gap:12px}
+#cleanPageOutlet .table-size-control select{width:auto;min-width:68px;height:34px;min-height:34px;padding:0 30px 0 10px;}
 #cleanPageOutlet .table-page-btn{width:34px;height:34px;min-height:34px;padding:0;border:1px solid var(--ui-navy);border-radius:7px;background:#fff;color:var(--ui-navy);font:600 18px/1 inherit;cursor:pointer}
 #cleanPageOutlet .table-page-btn:disabled{opacity:.35;cursor:not-allowed}
 
 /* Monitoring & Assessment professional layout. */
 #cleanPageOutlet #r43Monitoring{display:grid;gap:14px}
-#cleanPageOutlet #r43Monitoring .ge-assess-tabs{display:flex;gap:20px;flex-wrap:wrap;border-bottom:1px solid #dce5ee;padding:0;background:transparent}
-#cleanPageOutlet #r43Monitoring .ge-assess-tab{height:42px;min-height:42px;padding:0 2px;border:0;border-bottom:3px solid transparent;border-radius:0;background:transparent;color:#62778b;font:600 13px/1 inherit;cursor:pointer;box-shadow:none}
-#cleanPageOutlet #r43Monitoring .ge-assess-tab:hover{color:var(--ui-navy);background:transparent}
-#cleanPageOutlet #r43Monitoring .ge-assess-tab.active{color:var(--ui-navy);border-bottom-color:var(--ui-navy);background:transparent;box-shadow:none}
 #cleanPageOutlet #r43Monitoring .ge-monitor-kpis{grid-template-columns:repeat(5,minmax(0,1fr));margin:0}
 #cleanPageOutlet #r43Monitoring .ge-monitor-kpi{min-height:104px;padding:16px;border:1px solid #d6e0e9;border-radius:10px;background:#fff;display:flex;flex-direction:column;gap:5px;justify-content:center}
 #cleanPageOutlet #r43Monitoring .ge-monitor-kpi small{font-size:11px;color:#72869a}.ge-monitor-kpi b{font-size:24px;color:var(--ui-text)}
@@ -349,6 +381,58 @@ html body>.initiative-dialog .ge-picker-pop{z-index:2147482500}
 @media(max-width:1100px){#cleanPageOutlet #r43Monitoring .ge-monitor-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}#cleanPageOutlet #r43Monitoring .ge-submission-toolbar{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){#cleanPageOutlet #r43Monitoring .ge-monitor-kpis,#cleanPageOutlet #r43Monitoring .ge-submission-toolbar,#cleanPageOutlet #r43Monitoring .ge-checklist-preview-meta{grid-template-columns:1fr}#cleanPageOutlet #r43Monitoring .ge-monitor-flow{grid-template-columns:1fr}#cleanPageOutlet #r43Monitoring .ge-monitor-flow>i{transform:rotate(90deg);justify-self:center}#cleanPageOutlet #r43Monitoring .ge-checklist-preview-head{grid-template-columns:1fr}.ge-checklist-preview-foot{flex-direction:column}}
 
+/* Monitoring tabs: one canonical text-navigation style, independent of buttons. */
+html body #cleanPageOutlet #r43Monitoring .ge-assess-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px;
+  margin: 12px 0 20px;
+  padding: 0;
+  border-bottom: 1px solid #d7e2ec;
+}
+html body #cleanPageOutlet #r43Monitoring .ge-assess-tabs > .ge-assess-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: auto;
+  min-width: 0;
+  height: 39px;
+  min-height: 0;
+  margin: 0 0 -1px;
+  padding: 0 15px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+  outline-offset: 2px;
+  color: #63788d;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.25;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color .15s ease;
+}
+html body #cleanPageOutlet #r43Monitoring .ge-assess-tabs > .ge-assess-tab:hover,
+html body #cleanPageOutlet #r43Monitoring .ge-assess-tabs > .ge-assess-tab:focus-visible {
+  color: #082b59;
+  background: transparent;
+  box-shadow: none;
+  text-decoration: none;
+}
+html body #cleanPageOutlet #r43Monitoring .ge-assess-tabs > .ge-assess-tab.active {
+  color: #082b59;
+  border-bottom-color: #082b59;
+  font-weight: 600;
+}
+
 /* Master Data content should size to content, never to a dashboard-sized minimum. */
 #cleanPageOutlet .ge-master-tabs-panel,#cleanPageOutlet .ge-master-primary,#cleanPageOutlet .ge-master-catalog,#cleanPageOutlet .ge-panel:has(.ge-ref-tabs){min-height:0;height:auto}
 
@@ -361,7 +445,6 @@ html body .ge-checklist-share .ge-guest-identity label{display:grid;gap:5px}
 @media(max-width:760px){html body .ge-checklist-share .ge-guest-identity{grid-template-columns:1fr}}
 
 /* Any dynamically-opened portal modal promoted to body uses the same top layer. */
-html body>.ge-portal-overlay{z-index:2147482000}
 html body>.ge-portal-overlay .modal-card,
 html body>.ge-portal-overlay .initiative-dialog-card,
 html body>.ge-portal-overlay .ge-id-modal,
@@ -371,25 +454,60 @@ html body>.ge-portal-overlay .ge-ref-modal{font-family:inherit}
 /* R30 shared refinements — dialogs, monitoring charts, calendar/year, Gantt cells and action spacing. */
 html body .ge-page-actions,html body .modal-actions,html body .ge-id-actions,html body .bulk-action-group,
 html body .lounge-directory-actions,html body .planning-directory-actions,html body .lounge-card-actions,
-html body .ge-checklist-share-dialog-actions,html body .ge-gantt-scale-actions-r16{gap:8px}
+html body .ge-gantt-scale-actions-r16{gap:8px}
 
-html body .ge-checklist-share-dialog-shell{width:min(620px,calc(100vw - 32px));max-width:620px;margin:auto;padding:0;border:0;border-radius:14px;background:transparent;box-shadow:none;color:var(--ui-text)}
-html body .ge-checklist-share-dialog-shell::backdrop{background:rgba(4,28,58,.58);backdrop-filter:blur(2px)}
-html body .ge-checklist-share-dialog{overflow:hidden;border:1px solid #d8e3ed;border-radius:14px;background:#fff;box-shadow:var(--ui-shadow)}
-html body .ge-checklist-share-dialog>header{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;padding:22px 24px 18px;border-bottom:1px solid #dbe4ee}
-html body .ge-checklist-share-dialog>header h2{margin:0 0 4px;font-size:21px;line-height:1.2;color:var(--ui-text)}
-html body .ge-checklist-share-dialog>header p{margin:0;color:var(--ui-muted);font-size:12px}
-html body .ge-checklist-share-x{width:40px;min-width:40px;padding:0;font-size:21px}
-html body .ge-checklist-share-body{display:grid;gap:12px;padding:20px 24px}
-html body .ge-checklist-share-body label{display:grid;gap:6px}
-html body .ge-checklist-share-result{display:grid;gap:14px;padding:14px;border:1px solid #dbe4ee;border-radius:10px;background:#f8fafc}
-html body .ge-share-link-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
-html body .ge-share-short-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-html body .ge-share-qr{display:grid;grid-template-columns:auto minmax(0,1fr);gap:16px;align-items:center;padding-top:4px}
-html body .ge-share-qr svg{display:block;width:148px;height:148px;border:1px solid #dbe4ee;border-radius:8px;background:#fff}
-html body .ge-share-qr p{margin:4px 0 10px}
-html body .ge-share-feedback{min-height:18px;margin:0;color:#536b7b;font-size:12px}
-html body .ge-checklist-share-dialog>footer{display:flex;justify-content:flex-end;padding:16px 24px;border-top:1px solid #dbe4ee;background:#fbfcfe}
+/* Native portal dialogs share the viewport and density rules. */
+.ge-native-dialog{
+  box-sizing:border-box;
+  inline-size:min(var(--ge-dialog-width,620px),calc(100vw - 32px));
+  max-block-size:calc(100dvh - 32px);
+  margin:auto;
+  padding:0;
+  border:0;
+  border-radius:14px;
+  background:transparent;
+  color:var(--ui-text);
+  overflow:hidden;
+}
+.ge-native-dialog::backdrop{background:rgba(4,28,58,.58);backdrop-filter:blur(2px)}
+.ge-native-dialog-card{
+  box-sizing:border-box;
+  max-block-size:calc(100dvh - 32px);
+  border-radius:inherit;
+  overflow:hidden;
+}
+.ge-checklist-share-dialog{
+  display:grid;
+  grid-template-rows:auto minmax(0,1fr) auto;
+  border:1px solid #d8e3ed;
+  background:#fff;
+  box-shadow:var(--ui-shadow);
+}
+.ge-checklist-share-dialog>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid #dbe4ee}
+.ge-checklist-share-dialog>header h2{margin:0 0 4px;font-size:21px;line-height:1.2}
+.ge-checklist-share-dialog>header p{margin:0;color:var(--ui-muted);font-size:13px}
+html body button.ge-checklist-share-x{inline-size:var(--ui-control-h);flex:none;padding:0;font-size:21px}
+.ge-checklist-share-body{display:grid;align-content:start;gap:12px;min-block-size:0;overflow:auto;overscroll-behavior:contain;padding:16px 20px}
+.ge-checklist-share-body label:not([hidden]){display:grid;gap:6px;min-inline-size:0;font-size:13px}
+.ge-checklist-share-body>p,.ge-share-qr p{margin:0;font-size:13px;color:var(--ui-muted)}
+.ge-checklist-share-result:not([hidden]){display:grid;gap:12px;padding:12px;border:1px solid #dbe4ee;border-radius:10px;background:#f8fafc}
+.ge-share-link-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.ge-share-link-row input{flex:1 1 10ch;min-inline-size:0}
+.ge-share-short-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px}
+.ge-share-qr:not([hidden]){display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding-top:4px}
+.ge-share-qr svg{display:block;inline-size:132px;block-size:132px;border:1px solid #dbe4ee;border-radius:8px;background:#fff}
+.ge-share-qr p{margin:4px 0 8px}
+.ge-share-feedback:empty{display:none}
+.ge-checklist-share-dialog>footer{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;padding:12px 20px;border-top:1px solid #dbe4ee;background:#fbfcfe}
+
+.ge-map-gallery{--ge-dialog-width:920px}
+.ge-map-gallery-card{position:relative;padding:12px;background:#071c31;color:#fff}
+.ge-map-gallery-card>img{display:block;inline-size:100%;max-block-size:calc(100dvh - 108px);object-fit:contain;border-radius:12px}
+.ge-map-gallery-card .ge-dialog-close{position:absolute;right:14px;top:14px;width:42px;height:42px;border-radius:10px;border:1px solid #fff;background:#fff;color:#062e5f;font-size:26px;z-index:2}
+.ge-map-gallery-card .ge-gallery-nav:not([hidden]){position:absolute;top:50%;transform:translateY(-50%);width:46px;height:56px;border:0;border-radius:12px;background:rgba(255,255,255,.92);font-size:31px;color:#062e5f}
+.ge-gallery-nav.prev{left:24px}
+.ge-gallery-nav.next{right:24px}
+.ge-gallery-count{padding:8px 0 0;text-align:center}
 
 html body #cleanPageOutlet .ge-submission-chart{min-width:0;padding:16px;border:1px solid #d6e0e9;border-radius:10px;background:#fff}
 html body #cleanPageOutlet .ge-chart-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
@@ -444,18 +562,11 @@ html body.portal-ready.portal-shell-ready .ge-nav-link.active *,html body.portal
 html body #cleanPageOutlet .ge-page-actions .ge-btn,html body #cleanPageOutlet .bulk-action-group .ge-btn,html body #cleanPageOutlet .lounge-directory-actions .ge-btn,html body #cleanPageOutlet .planning-directory-actions .ge-btn{height:var(--ui-control-h);min-height:var(--ui-control-h)}
 
 /* Canonical interface refinements — shared page, controls, maps and planning cards. */
-:root{--ui-control-h:44px;--ui-gap:10px;--ui-radius:10px}
-html body #cleanPageOutlet .ge-btn,html body #cleanPageOutlet button,html body #cleanPageOutlet select,html body #cleanPageOutlet input:not([type=checkbox]):not([type=radio]){max-width:100%;box-sizing:border-box}
-html body #cleanPageOutlet .ge-btn,html body #cleanPageOutlet button.ge-btn{min-height:var(--ui-control-h);height:var(--ui-control-h);padding:0 16px;display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1;font-family:inherit;font-weight:600}
+html body #cleanPageOutlet :is(.ge-btn,button,select,input:not([type=checkbox]):not([type=radio])):not(:where(.ge-table-action-cell *)){max-width:100%;box-sizing:border-box}
+html body #cleanPageOutlet .ge-btn:not(:where(.compact,.ge-table-action-cell *)){min-height:var(--ui-control-h);height:var(--ui-control-h);padding:0 16px;display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1;font-family:inherit;font-weight:600}
 html body #cleanPageOutlet select,html body #cleanPageOutlet input,html body #cleanPageOutlet textarea{text-align:left;text-align-last:left}
 html body #cleanPageOutlet label:has(input[type=checkbox]),html body #cleanPageOutlet label:has(input[type=radio]){justify-content:flex-start;text-align:left}
 html body .ge-nav-link.active,html body .sidebar a.active,html body [data-nav].active{opacity:1;visibility:visible;background:#e8f1fa;color:#082b59;box-shadow:inset 3px 0 0 #0b4d8a;font-weight:700}
-
-/* Monitoring uses navigation tabs, not elevated buttons. */
-#cleanPageOutlet #r43Monitoring .ge-assess-tabs{display:flex;align-items:flex-end;gap:4px;overflow-x:auto;padding:0 0 1px;margin:12px 0 18px;border-bottom:1px solid #d7e2ec;background:transparent;border-radius:0}
-#cleanPageOutlet #r43Monitoring .ge-assess-tab{height:42px;min-height:42px;padding:0 14px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;box-shadow:none;color:#63788d;font:600 13px/1 inherit}
-#cleanPageOutlet #r43Monitoring .ge-assess-tab:hover{background:#f3f7fb;color:#0b3768}
-#cleanPageOutlet #r43Monitoring .ge-assess-tab.active{background:transparent;color:#082b59;border-bottom-color:#082b59;box-shadow:none}
 #cleanPageOutlet #r43Monitoring .ge-submission-toolbar{display:grid;grid-template-columns:repeat(5,minmax(145px,1fr)) auto;gap:var(--ui-gap);align-items:center}
 #cleanPageOutlet #r43Monitoring .ge-submission-toolbar>*{height:var(--ui-control-h);min-height:var(--ui-control-h);margin:0}
 #cleanPageOutlet #r43Monitoring .ge-submission-toolbar select{padding-top:0;padding-bottom:0}
@@ -487,7 +598,7 @@ html body .ge-nav-link.active,html body .sidebar a.active,html body [data-nav].a
 #cleanPageOutlet .planning-record-body dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 16px;margin:2px 0 8px}
 #cleanPageOutlet .planning-record-body dl>div{display:block;min-width:0}
 #cleanPageOutlet .planning-record-body dd{overflow-wrap:anywhere}
-#cleanPageOutlet .planning-row-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:auto}
+#cleanPageOutlet .planning-record-card .planning-row-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:auto}
 #cleanPageOutlet .planning-category-grid{grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
 #cleanPageOutlet .planning-category-grid>a.planning-category-visual{display:grid;grid-template-rows:145px auto;overflow:hidden;padding:0;min-height:230px}
 #cleanPageOutlet .planning-category-visual img{width:100%;height:145px;object-fit:cover;display:block}
@@ -526,21 +637,63 @@ html body .ge-nav-link.active,html body .sidebar a.active,html body [data-nav].a
 #cleanPageOutlet .p31.p3-user-page .table-wrap{max-height:420px;overflow:auto}
 
 /* Responsive density and controls. */
-@media(min-width:1100px){html.ge-portal-density{zoom:.9}}
-@media(max-width:1099px){html.ge-portal-density{zoom:1}}
+html.ge-portal-density {
+  --ge-portal-zoom: 1;
+  zoom: var(--ge-portal-zoom);
+}
+@media (min-width: 1100px) {
+  html.ge-portal-density { --ge-portal-zoom: .81; }
+}
+html.ge-portal-density body > :is(.ge-viewport-overlay,.ge-portal-overlay,.ge-confirm-layer,.planning-dialog-layer,.ge-id-backdrop,.ge-ref-backdrop,.ge-modal-backdrop,.overlay-backdrop,[data-modal-root],dialog[open]) {
+  zoom: calc(1 / var(--ge-portal-zoom));
+}
+/* The backdrop uses the viewport; the dialog card follows portal density. */
+html.ge-portal-density body > :is(.ge-viewport-overlay,.ge-portal-overlay,.ge-confirm-layer,.planning-dialog-layer,.ge-id-backdrop,.ge-ref-backdrop,.ge-modal-backdrop,.overlay-backdrop,[data-modal-root],dialog[open]) > :is(.ge-viewport-overlay-card,.modal-card,.initiative-dialog-card,.ge-confirm-card,.planning-dialog,.ge-id-modal,.ge-ref-modal,.tp-modal,.map-move-modal-card,.ge-native-dialog-card) {
+  zoom: var(--ge-portal-zoom);
+}
+.lounge-import-heading h2 { margin: 0 0 8px; }
+.lounge-import-heading p { margin: 0; color: #46627b; }
+.lounge-import-file {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 16px;
+  align-items: center;
+  margin: 18px 0;
+}
+.lounge-import-file label { font-weight: 650; }
+.lounge-import-file input { grid-column: 1 / -1; }
+.lounge-import-file input::file-selector-button {
+  border: 1px solid #c2d4e6;
+  border-radius: 6px;
+  background: #eef4fa;
+  color: #12365b;
+  padding: 6px 10px;
+  margin-inline-end: 10px;
+  cursor: pointer;
+}
+.bulk-import-save-alert {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid #f0c5c5;
+  border-radius: 8px;
+  background: #fff4f4;
+  color: #862a2a;
+}
+.bulk-import-save-alert p { margin: 4px 0 0; }
+
 @media(max-width:1100px){#cleanPageOutlet .airport-map-shell-v216{grid-template-columns:1fr}#cleanPageOutlet .planning-filter-grid,#cleanPageOutlet #loungeFilterGridR4,#cleanPageOutlet .lounge-filter-grid-ref{grid-template-columns:repeat(2,minmax(0,1fr))}#cleanPageOutlet .p31.p3-user-page>.cards{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:760px){#cleanPageOutlet #r43Monitoring .ge-assess-tabs{gap:0}#cleanPageOutlet #r43Monitoring .ge-assess-tab{padding:0 10px}#cleanPageOutlet #r43Monitoring .ge-submission-toolbar,#cleanPageOutlet .planning-filter-grid,#cleanPageOutlet #loungeFilterGridR4,#cleanPageOutlet .lounge-filter-grid-ref{grid-template-columns:1fr}#cleanPageOutlet .planning-domain-grid-view{grid-template-columns:1fr}#cleanPageOutlet .planning-record-card{grid-template-columns:72px minmax(0,1fr);padding:15px;gap:12px}#cleanPageOutlet .planning-record-body dl{grid-template-columns:1fr}#cleanPageOutlet .p31.p3-user-page>.head{flex-direction:column}#cleanPageOutlet .p31.p3-user-page>.cards,#cleanPageOutlet .p31.p3-user-page>.grid2{grid-template-columns:1fr}}
+@media(max-width:760px){#cleanPageOutlet #r43Monitoring .ge-submission-toolbar,#cleanPageOutlet .planning-filter-grid,#cleanPageOutlet #loungeFilterGridR4,#cleanPageOutlet .lounge-filter-grid-ref{grid-template-columns:1fr}#cleanPageOutlet .planning-domain-grid-view{grid-template-columns:1fr}#cleanPageOutlet .planning-record-card{grid-template-columns:72px minmax(0,1fr);padding:15px;gap:12px}#cleanPageOutlet .planning-record-body dl{grid-template-columns:1fr}#cleanPageOutlet .p31.p3-user-page>.head{flex-direction:column}#cleanPageOutlet .p31.p3-user-page>.cards,#cleanPageOutlet .p31.p3-user-page>.grid2{grid-template-columns:1fr}}
 
 html body #cleanPageOutlet select option{text-align:left}
 
 
 /* Canonical modal layers and Planning Workspace controls. */
-.ge-confirm-layer,.planning-dialog-layer{position:fixed;left:0;top:0;width:111.112vw;height:111.112vh;z-index:2147483000;display:grid;place-items:center;padding:24px;background:rgba(6,24,51,.64);box-sizing:border-box;backdrop-filter:blur(3px)}
+.ge-confirm-layer,.planning-dialog-layer{position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;padding:24px;background:rgba(6,24,51,.64);box-sizing:border-box;backdrop-filter:blur(3px)}
 .ge-confirm-layer .ge-confirm-card{width:min(560px,calc(100vw - 40px));background:#fff;border:1px solid #d6e2ef;border-radius:14px;box-shadow:0 24px 70px rgba(2,17,42,.32);overflow:hidden}.ge-confirm-layer .ge-confirm-card header{display:flex;justify-content:space-between;gap:18px;padding:22px 24px;border-bottom:1px solid #e2e9f0}.ge-confirm-layer .ge-confirm-card h2{margin:0 0 6px}.ge-confirm-layer .ge-confirm-card p{margin:0;color:#667f97}.ge-confirm-layer .ge-confirm-card footer{display:flex;justify-content:flex-end;gap:10px;padding:16px 24px}.ge-confirm-x{width:40px;height:40px;border:1px solid #b9cbe0;border-radius:9px;background:#fff;color:#12365b;font-size:20px}
 .planning-dialog-layer>.planning-dialog{position:relative;display:flex;flex-direction:column;width:min(860px,calc(100vw - 32px));max-height:calc(100vh - 48px);background:#fff;border:1px solid #d6e2ef;border-radius:16px;box-shadow:0 26px 76px rgba(2,17,42,.35);overflow:hidden}.planning-dialog-layer .planning-modal-content{overflow:auto;min-height:0}.planning-dialog-layer .ge-id-actions{margin-top:auto}
 #cleanPageOutlet .ge-view-toggle.lounge-segmented-switch,#cleanPageOutlet #geLoungeViewToggle.lounge-segmented-switch{display:inline-flex;align-items:center;gap:2px;padding:3px;border:0;border-radius:10px;background:#eef3f8;box-shadow:inset 0 0 0 1px #d3dfeb;min-height:44px}#cleanPageOutlet .ge-view-toggle.lounge-segmented-switch button,#cleanPageOutlet #geLoungeViewToggle.lounge-segmented-switch button{height:38px;min-height:38px;padding:0 18px;border:0;border-radius:8px;background:transparent;color:#46627b;font-family:inherit;font-size:13px;font-weight:700;box-shadow:none}#cleanPageOutlet .ge-view-toggle.lounge-segmented-switch button.active,#cleanPageOutlet #geLoungeViewToggle.lounge-segmented-switch button.active{background:#082f66;color:#fff;box-shadow:none}
 #cleanPageOutlet .planning-record-card{grid-template-columns:64px minmax(0,1fr)}#cleanPageOutlet .planning-record-station{width:64px;height:64px;min-width:64px;min-height:64px;font-size:12px;border-radius:14px}#cleanPageOutlet .planning-list-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}#cleanPageOutlet .planning-list-head .ge-p29-history-toggle{margin-left:auto}
-@media(max-width:1099px){.ge-confirm-layer,.planning-dialog-layer{width:100vw;height:100vh}}@media(max-width:760px){.ge-confirm-layer,.planning-dialog-layer{padding:8px}.planning-dialog-layer>.planning-dialog{width:calc(100vw - 16px);max-height:calc(100vh - 16px)}.ge-confirm-layer .ge-confirm-card{width:calc(100vw - 16px)}}
+@media(max-width:760px){.ge-confirm-layer,.planning-dialog-layer{padding:8px}.planning-dialog-layer>.planning-dialog{width:calc(100vw - 16px);max-height:calc(100vh - 16px)}.ge-confirm-layer .ge-confirm-card{width:calc(100vw - 16px)}}
 
 /* Targeted stability recovery: Service & Provider uses the Planning Workspace hub panel pattern. */
 #cleanPageOutlet .planning-service-provider-hub{margin-top:18px}
@@ -551,7 +704,7 @@ html body #cleanPageOutlet select option{text-align:left}
 
 /* Canonical multi-select field: field appearance, left-aligned text, checkbox menu. */
 html body .ge-picker-r11{position:relative;width:100%;}
-html body .ge-picker-field{box-sizing:border-box;width:100%;min-height:48px;padding:0 42px 0 14px;border:1px solid #c8d7e4;border-radius:10px;background:#fff;color:#173b54;display:flex;align-items:center;justify-content:flex-start;text-align:left;font:inherit;font-weight:400;cursor:pointer;position:relative;box-shadow:none;}
+html body .ge-picker-field{box-sizing:border-box;width:100%;min-height:48px;padding:0 42px 0 14px;border:1px solid #c8d7e4;border-radius:10px;background:#fff;color:#173b54;display:flex;align-items:center;justify-content:flex-start;text-align:left;cursor:pointer;position:relative;box-shadow:none;}
 html body .ge-picker-field:focus{outline:none;border-color:#6f8eaa;box-shadow:0 0 0 3px rgba(6,43,99,.08);}
 html body .ge-picker-field>span:first-child{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;}
 html body .ge-picker-caret{position:absolute;right:14px;top:50%;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #173b54;transform:translateY(-35%);}

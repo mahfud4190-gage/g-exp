@@ -1,5 +1,5 @@
 
-window.GEFiles=(()=>{
+if(window.GEFiles?.source!=='Firebase Storage') window.GEFiles=(()=>{
  const DB='GE_PORTAL_FILES_V28', STORE='files';
  function db(){return new Promise((resolve,reject)=>{const r=indexedDB.open(DB,1);r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains(STORE))r.result.createObjectStore(STORE)};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
  async function put(key,file){const d=await db();return new Promise((res,rej)=>{const tx=d.transaction(STORE,'readwrite');tx.objectStore(STORE).put(file,key);tx.oncomplete=()=>res(key);tx.onerror=()=>rej(tx.error)})}

@@ -1,5 +1,5 @@
 /* P40 Clean Draft 01: structural normalization only; Edition 1 remains visual baseline. */
-html,body{min-height:100%} .clean-page-loading{padding:32px;text-align:center}.clean-page-error{margin:24px;padding:18px;border:1px solid currentColor;border-radius:12px}
+html,body{min-height:100%}.clean-page-error{margin:24px;padding:18px;border:1px solid currentColor;border-radius:12px}
 /* Canonical overlay strata */
 header.top{z-index:200}.side{z-index:190}.dropdown,.menu-dropdown{z-index:500}
 .modal-backdrop,.overlay-backdrop,[class*="backdrop"],.ge-id-backdrop,.ge-modal-backdrop{z-index:2147483000}
@@ -13,12 +13,39 @@ html body.portal-ready.portal-shell-ready .modal-backdrop,
 html body.portal-ready.portal-shell-ready .overlay-backdrop,
 html body.portal-ready.portal-shell-ready .tp-modal-backdrop,
 html body.portal-ready.portal-shell-ready .map-move-modal-backdrop,
-html body.portal-ready.portal-shell-ready .ge-viewport-overlay,
 html body.portal-ready.portal-shell-ready [aria-modal="true"]{z-index:100000}
-html body.portal-ready.portal-shell-ready .modal-backdrop.show,
-html body.portal-ready.portal-shell-ready .tp-modal-backdrop.show{display:grid;place-items:center;position:fixed;inset:0;padding:20px;overflow:auto}
-html body.portal-ready.portal-shell-ready .modal-backdrop>.modal-card,
-html body.portal-ready.portal-shell-ready .tp-modal-backdrop>.tp-modal{position:relative;z-index:100001;margin:auto;max-height:calc(100vh - 40px);overflow:auto}
+html body.portal-ready.portal-shell-ready .modal-backdrop.show:not(.ge-viewport-overlay),
+html body.portal-ready.portal-shell-ready .tp-modal-backdrop.show:not(.ge-viewport-overlay){display:grid;place-items:center;position:fixed;inset:0;padding:20px;overflow:auto}
+html body.portal-ready.portal-shell-ready .modal-backdrop:not(.ge-viewport-overlay)>.modal-card,
+html body.portal-ready.portal-shell-ready .tp-modal-backdrop:not(.ge-viewport-overlay)>.tp-modal{position:relative;z-index:100001;margin:auto;max-height:calc(100vh - 40px);overflow:auto}
+body.portal-ready.portal-shell-ready > .ge-viewport-overlay {
+  position: fixed;
+  inset: 0;
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: clamp(12px, 3vw, 28px);
+  z-index: 100002;
+  box-sizing: border-box;
+  place-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+body.portal-ready.portal-shell-ready > .ge-viewport-overlay:is(.show,.open,[open]) {
+  display: grid;
+}
+body.portal-ready.portal-shell-ready > .ge-viewport-overlay .ge-viewport-overlay-card {
+  position: relative;
+  inset: auto;
+  transform: none;
+  margin: 0 auto;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: auto;
+  box-sizing: border-box;
+}
 html body.portal-ready.portal-shell-ready>.shell>.side{overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
 html body.portal-ready.portal-shell-ready>.shell>.side .ge-sidebar-toggle{position:sticky;bottom:-54px;margin:12px -8px -54px;width:calc(100% + 16px)}
 .ge-airport-network-child{margin-top:18px}
@@ -36,7 +63,11 @@ html body.portal-ready.portal-shell-ready .p26-account-modal .modal-x{position:a
 html body.portal-ready.portal-shell-ready input,html body.portal-ready.portal-shell-ready select,html body.portal-ready.portal-shell-ready .ge-btn{box-sizing:border-box}
 html body.portal-ready.portal-shell-ready input:not([type=checkbox]):not([type=radio]),html body.portal-ready.portal-shell-ready select{min-height:40px}
 html body.portal-ready.portal-shell-ready .ge-planning-tabs a.active,html body.portal-ready.portal-shell-ready [role=tab].active,html body.portal-ready.portal-shell-ready .admin-section-tab.active{background:#062b63;color:#fff;border-color:#062b63}
-.clean-page-loading{min-height:240px;display:grid;place-items:center;color:#6f8298}
+.clean-page-loading{position:fixed;top:calc(var(--p19-header,72px) + 12px);left:50%;transform:translateX(-50%);z-index:64999;display:flex;align-items:center;gap:10px;max-width:calc(100vw - 32px);padding:10px 16px;border:1px solid #c7d9e9;border-radius:8px;background:#fff;color:#0b315d;font-size:13px;font-weight:650;box-shadow:0 4px 16px #062b6320;pointer-events:none}
+.clean-page-loading[hidden]{display:none}
+.clean-page-loading::before{content:'';inline-size:14px;block-size:14px;flex:none;border:2px solid #d6e4f1;border-top-color:#0b55ad;border-radius:50%;animation:portal-loading .75s linear infinite}
+@keyframes portal-loading{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.clean-page-loading::before{animation:none}}
 @media(max-width:680px){html body.portal-ready.portal-shell-ready .p26-account-modal{width:calc(100vw - 20px);max-height:calc(100dvh - 20px)}.p26-form-grid{grid-template-columns:1fr}}
 
 /* Keep shell geometry stable while auth/page runtime boots; avoids wide-sidebar bridge frame. */

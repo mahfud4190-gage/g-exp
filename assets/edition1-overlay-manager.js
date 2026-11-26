@@ -14,7 +14,7 @@ const selectors=[
   '#geV2542DraftModal', '#geCalListModalV2533', '#geV2532ListModal'
 ];
 const matches=()=>document.querySelectorAll(selectors.join(','));
-function promote(){matches().forEach(el=>{if(el.parentElement!==document.body)document.body.appendChild(el)});}
+function promote(){matches().forEach(el=>{if(el.id==='geGlobalRefModal'||el.closest('#geGlobalRefModal'))return;if(el.parentElement!==document.body)document.body.appendChild(el)});}
 function install(){
   promote();
   new MutationObserver(promote).observe(document.body,{childList:true,subtree:true});
