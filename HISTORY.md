@@ -336,3 +336,9 @@ This is the single canonical work-history file for the portal. Entries are group
 - Calendar & Gantt: shared ownership filter (My Activities, My Initiatives, My Unit, My Station, Shared Activities, All Accessible), default My Activities; filtered Calendar KPI counts match visible activities. Existing server data scope remains authoritative.
 - Inbox API: recipient-specific state changes and explicit message deletion; updated read-state contract regression expectation to reflect synchronized notification status.
 - Idle/runtime reload behavior remains out of scope at the user's request. No changes to Cost & Budget, Firestore collection layout, or unrelated UI modules.
+
+## 2026-11-25 — Personal Inbox Recipient Ownership Correction
+- Personal Inbox is scoped to the authenticated recipient UID for every role, including Super Admin; administrative visibility does not make the administrator the message recipient. No legacy records were deleted or assigned to an arbitrary account.
+- Inbox list, unread summaries, direct message links, and message actions are limited to the signed-in recipient; the client verifies authoritative authentication before a state change.
+- New Inbox messages require a valid, active recipient; ordinary user submissions retain their existing individual support-administrator routing. State updates accept only Read/Unread and Pin/Unpin fields; recipient identity cannot be changed through these actions.
+- No Firestore migration, automatic recipient reassignment, cache deletion, or changes to other modules. Existing unassigned messages require deliberate administrative reconciliation rather than silent reassignment.

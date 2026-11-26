@@ -2175,8 +2175,8 @@ function showAdminSection(name,btn){
 function renderAdminOverview(){
  const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v};
  set('adminAccountCount',(data.users||[]).length);
- set('adminInboxCount',(data.inbox||[]).length);
- set('adminUnreadCount',(data.inbox||[]).filter(x=>x.status==='Unread').length);
+ set('adminInboxCount',personalInboxRows().length);
+ set('adminUnreadCount',personalInboxRows().filter(x=>x.status==='Unread'||x.notificationStatus==='Unread').length);
  set('adminAuditCount',(data.auditLogs||[]).length);
  const targets={adminAccountCount:'accounts',adminInboxCount:'inbox',adminUnreadCount:'inbox',adminAuditCount:'audit'};
  Object.entries(targets).forEach(([id,section])=>{const card=document.getElementById(id)?.closest('.admin-overview-card');if(!card||card.dataset.summaryBound)return;if(section==='audit'&&geSession()?.role!=='Super Admin')return;card.dataset.summaryBound='1';card.tabIndex=0;card.setAttribute('role','button');card.style.cursor='pointer';const go=()=>{showAdminSection(section,document.querySelector(`.admin-section-tab[onclick*="'${section}'"]`));const filter=document.getElementById('inboxStatusFilter');if(section==='inbox'&&filter){filter.value=id==='adminUnreadCount'?'Unread':'';renderAdminInbox()}document.getElementById('adminSection'+section[0].toUpperCase()+section.slice(1))?.scrollIntoView({block:'start'})};card.addEventListener('click',go);card.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();go()}})});
@@ -2192,15 +2192,20 @@ function submitInbox(type,subject,body,extra={}){
  });
  save();renderAdminOverview();
 }
+function personalInboxRows(){
+ const s=typeof gxGetSession==='function'?(gxGetSession()||{}):window.GX_CURRENT_USER||{};
+ const uid=String(s.uid||'');
+ return (data.inbox||[]).filter(x=>uid && String(x.recipientId||'')===uid);
+}
 function inboxFiltered(){
  const q=(document.getElementById('inboxSearch')?.value||'').toLowerCase();
  const type=document.getElementById('inboxTypeFilter')?.value||'',status=document.getElementById('inboxStatusFilter')?.value||'';
- return (data.inbox||[]).filter(x=>(!q||`${x.senderName||''} ${x.subject||x.title||''} ${x.body||x.message||''}`.toLowerCase().includes(q))&&(!type||x.type===type)&&(!status||(status==='Unread'?x.status==='Unread':x.status===status)))
+ return personalInboxRows().filter(x=>(!q||`${x.senderName||''} ${x.subject||x.title||''} ${x.body||x.message||''}`.toLowerCase().includes(q))&&(!type||x.type===type)&&(!status||(status==='Unread'?x.status==='Unread':x.status===status)))
  .sort((a,b)=>Number(Boolean(b.pinned))-Number(Boolean(a.pinned))||String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
 }
 function renderAdminInbox(){
  const t=document.getElementById('adminInboxRows');if(!t)return;
- const filter=document.getElementById('inboxTypeFilter');if(filter){const current=filter.value;filter.innerHTML='<option value="">All Types</option>'+[...new Set((data.inbox||[]).map(x=>x.type).filter(Boolean))].sort().map(v=>`<option value="${geEsc(v)}">${geEsc(v)}</option>`).join('');filter.value=current}
+ const filter=document.getElementById('inboxTypeFilter');if(filter){const current=filter.value;filter.innerHTML='<option value="">All Types</option>'+[...new Set(personalInboxRows().map(x=>x.type).filter(Boolean))].sort().map(v=>`<option value="${geEsc(v)}">${geEsc(v)}</option>`).join('');filter.value=current}
  t.innerHTML=inboxFiltered().map((x,i)=>`<tr class="${x.status==='Unread'?'unread-row':''}" data-inbox-id="${geEsc(x.id)}" tabindex="0" aria-label="Open message: ${geEsc(x.subject||x.title||'Message')}" style="cursor:pointer">
  <td>${i+1}</td><td>${geDateTime(x.createdAt||x.timestamp||x.at||x.date)}</td><td><span class="inbox-type">${geEsc(x.type||'-')}</span></td>
  <td><b>${geEsc(x.senderName||x.from||'-')}</b><small>${geEsc(x.senderRole||'')}</small></td><td>${geEsc(x.senderArea||x.area||'-')}</td><td>${geEsc(x.subject||x.title||'-')}${x.pinned?' <small title="Pinned">Pinned</small>':''}</td>
@@ -2228,7 +2233,7 @@ function renderAdminInbox(){
  if(typeof geEnhanceAllTables==='function')setTimeout(geEnhanceAllTables,0);
  renderAdminOverview();
  const requested=new URLSearchParams(location.search).get('inbox');
- if(requested&&!window.__geInboxDeepLinkOpened){const match=(data.inbox||[]).find(x=>String(x.id)===requested);if(match){window.__geInboxDeepLinkOpened=true;queueMicrotask(()=>{showAdminSection('inbox',document.querySelector('.admin-section-tab[onclick*=\"inbox\"]'));openInboxDetail(requested)})}}
+ if(requested&&!window.__geInboxDeepLinkOpened){const match=personalInboxRows().find(x=>String(x.id)===requested);if(match){window.__geInboxDeepLinkOpened=true;queueMicrotask(()=>{showAdminSection('inbox',document.querySelector('.admin-section-tab[onclick*=\"inbox\"]'));openInboxDetail(requested)})}}
 }
 async function toggleInboxRead(id){
  const x=findInbox(id);if(!x)return;
@@ -2239,7 +2244,7 @@ async function toggleInboxPin(id){
  const x=findInbox(id);if(!x)return;
  try{await window.GEStore.updateInboxState(id,{pinned:!Boolean(x.pinned)});renderAdminInbox()}catch(e){geStorageNoticeV223?.('Message Update Failed',e.message||String(e),'error')}
 }
-function findInbox(id){return(data.inbox||[]).find(v=>String(v.id)===String(id))}
+function findInbox(id){return personalInboxRows().find(v=>String(v.id)===String(id))}
 async function openInboxDetail(id){
  const x=findInbox(id);if(!x)return;
  const shouldMarkRead=x.status==='Unread'||x.notificationStatus!=='Read';

@@ -1,7 +1,7 @@
 'use strict';
 const { bad, ok, bearer, firebase } = require('./_firebase');
 const { FieldValue } = require('firebase-admin/firestore');
-const {canChangeReadState} = require('./inbox-policy');
+const {canChangeReadState,isInboxRecipient} = require('./inbox-policy');
 
 const COLLECTIONS = new Set([
   'airports','initiatives','news','touchpoints','documents','projectEvents','loungePurchases','loungeVisitors','flightSchedule',
@@ -146,7 +146,7 @@ async function readCollection(db,actor,c){
     const snap=await dataQuery(db,c).get(); docs=snap.docs.filter(d=>{const row=d.data()||{};return ownsRecord(actor,row)||ownIds.has(String(row.initiativeId||row.projectId||''));});
   } else if(c==='contactMessages' && !isOperationalAdmin(actor) && actor.role!=='Super Admin'){
     const snap=await dataQuery(db,c).where('ownerUserId','==',String(actor.id)).get(); docs=snap.docs;
-  } else if(c==='inbox' && actor.role!=='Super Admin' && !isOperationalAdmin(actor)){
+  } else if(c==='inbox'){
     const snap=await dataQuery(db,c).where('recipientId','==',String(actor.id)).get(); docs=snap.docs;
   } else if(c==='users'){
     const snap=await db.collection('users').get(); docs=snap.docs;
@@ -171,7 +171,8 @@ async function readCollection(db,actor,c){
       detail:x.detail||x.message||''
     })).sort((a,b)=>String(b.timestamp||'').localeCompare(String(a.timestamp||'')));
   }
-  if(c==='inbox' && (isOperationalAdmin(actor)||actor.role==='Super Admin')) rows=rows.filter(x=>!x.recipientId||String(x.recipientId)===String(actor.id));
+  // Personal Inbox is always scoped to the authenticated recipient, including Superadmin.
+  // Unassigned legacy messages remain stored but are not claimed by an arbitrary administrator.
   if(c==='users') rows=rows.map(x=>{delete x.password;delete x.passwordHash;delete x.temporaryPassword;return x});
   if(c==='formTemplates' && !isOperationalAdmin(actor) && actor.role!=='Super Admin'){
     rows=rows.filter(x=>x.status==='Published' || String(x.createdBy||'')===String(actor.id));
@@ -203,7 +204,7 @@ async function writeOne(db,actor,collection,action,id,raw,{initiativeImport=fals
   if(FINANCIAL_COLLECTIONS.has(collection) && action==='DELETE')throw Object.assign(new Error('Financial records must be archived/reversed, never deleted.'),{statusCode:403,code:'FINANCIAL_DELETE_FORBIDDEN'});
   if(action==='DELETE')return db.runTransaction(async transaction=>{
     const snap=await transaction.get(ref); if(!snap.exists) return {id:ref.id,deleted:false};
-    const prev=snap.data()||{}; if(collection==='inbox'&&String(prev.recipientId||'')!==String(actor.id||''))throw Object.assign(new Error('Only the recipient may delete this message.'),{statusCode:403,code:'INBOX_RECIPIENT_ONLY'}); if(collection==='touchpoints' && /(?:^|[^a-z])(nps|csi)(?:[^a-z]|$)/i.test([prev.sourceType,prev.source,prev.sourceLabel,prev.origin,prev.originSource].filter(Boolean).join(' '))) throw Object.assign(new Error('Corporate NPS/CSI touch points cannot be deleted.'),{statusCode:403,code:'TOUCHPOINT_SOURCE_PROTECTED'}); if(isExternalActor(actor)&&!ownsRecord(actor,prev)) throw Object.assign(new Error('External users can only delete their own records.'),{statusCode:403,code:'OWNERSHIP_FORBIDDEN'}); if(!isExternalActor(actor)&&collection!=='inbox'&&!inScope(actor,prev)) throw Object.assign(new Error('Record outside account scope.'),{statusCode:403,code:'SCOPE_FORBIDDEN'});
+    const prev=snap.data()||{}; if(collection==='inbox'&&!isInboxRecipient(actor.id,prev))throw Object.assign(new Error('Only the recipient may delete this message.'),{statusCode:403,code:'INBOX_RECIPIENT_ONLY'}); if(collection==='touchpoints' && /(?:^|[^a-z])(nps|csi)(?:[^a-z]|$)/i.test([prev.sourceType,prev.source,prev.sourceLabel,prev.origin,prev.originSource].filter(Boolean).join(' '))) throw Object.assign(new Error('Corporate NPS/CSI touch points cannot be deleted.'),{statusCode:403,code:'TOUCHPOINT_SOURCE_PROTECTED'}); if(isExternalActor(actor)&&!ownsRecord(actor,prev)) throw Object.assign(new Error('External users can only delete their own records.'),{statusCode:403,code:'OWNERSHIP_FORBIDDEN'}); if(!isExternalActor(actor)&&collection!=='inbox'&&!inScope(actor,prev)) throw Object.assign(new Error('Record outside account scope.'),{statusCode:403,code:'SCOPE_FORBIDDEN'});
     if(collection==='initiatives' && !isExternalActor(actor) && actor.role!=='Super Admin' && !isOperationalAdmin(actor)) throw Object.assign(new Error('Admin access required to delete initiatives.'),{statusCode:403,code:'HIERARCHY_FORBIDDEN'});
     transaction.delete(ref);
     transaction.set(db.collection('portalMetadata').doc('cacheState'),{version:FieldValue.increment(1),updatedAt:FieldValue.serverTimestamp(),lastCollection:collection},{merge:true});
@@ -266,7 +267,16 @@ async function writeOne(db,actor,collection,action,id,raw,{initiativeImport=fals
     if(!Number.isFinite(Number(data.approvedAmount??data.revisedApprovedAmount)) || !String(data.approvalReference||'').trim())throw Object.assign(new Error('Approved Budget requires amount and approval reference.'),{statusCode:400,code:'FINANCIAL_APPROVAL_INCOMPLETE'});
   }
   if(collection==='touchpoints'&&existing.exists&&/(?:^|[^a-z])(nps|csi)(?:[^a-z]|$)/i.test([prev.sourceType,prev.source,prev.sourceLabel,prev.origin,prev.originSource].filter(Boolean).join(' '))) throw Object.assign(new Error('Corporate NPS/CSI touch points cannot be edited.'),{statusCode:403,code:'CSI_TOUCHPOINT_LOCKED'});
-  if(collection==='inbox'&&action==='CREATE')data.notificationStatus='Unread';
+  if(collection==='inbox' && action==='CREATE'){
+    // Every message requires one real recipient. Non-admin submissions are assigned
+    // to individual support administrators above; administrative messages must be explicit.
+    const recipientId=String(data.recipientId||'').trim();
+    if(!recipientId)throw Object.assign(new Error('Select a recipient before sending the message.'),{statusCode:400,code:'INBOX_RECIPIENT_REQUIRED'});
+    const recipient=await db.collection('users').doc(recipientId).get();
+    if(!recipient.exists || String(recipient.data()?.status||'').toLowerCase()==='inactive')throw Object.assign(new Error('Recipient is not an active user.'),{statusCode:400,code:'INBOX_RECIPIENT_INVALID'});
+    data.recipientId=recipientId;
+    data.notificationStatus='Unread';
+  }
   if(isExternalActor(actor) && existing.exists && !ownsRecord(actor,prev)) throw Object.assign(new Error('External users can only update their own records.'),{statusCode:403,code:'OWNERSHIP_FORBIDDEN'});
   if(!isExternalActor(actor) && existing.exists && collection!=='inbox' && !inScope(actor,prev)) throw Object.assign(new Error('Record outside account scope.'),{statusCode:403,code:'SCOPE_FORBIDDEN'});
   if(collection==='initiatives' && existing.exists && !isExternalActor(actor) && actor.role!=='Super Admin' && !isOperationalAdmin(actor)){

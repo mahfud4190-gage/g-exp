@@ -346,8 +346,8 @@
   async function updateInboxState(id,changes){
     const item=state.inbox.find(x=>String(x.id)===String(id));
     if(!item)throw new Error('Message not found.');
-    const s=session();
-    if(String(item.recipientId||'')!==String(s.uid||s.id||''))throw new Error('Only the recipient may change message state.');
+    const s=await waitAuth();
+    if(!item.recipientId || String(item.recipientId)!==String(s.uid))throw new Error('This message is not assigned to your account.');
     const allowed=['status','notificationStatus','pinned'];
     if(Object.keys(changes).some(k=>!allowed.includes(k)))throw new Error('Unsupported inbox change.');
     if(Object.entries(changes).every(([k,v])=>item[k]===v))return item;
