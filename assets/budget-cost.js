@@ -4,7 +4,7 @@
 (function(){
 'use strict';
 const SCHEMA='GEXP-FIN-1';
-const COLLECTION={budgets:'financialBudgets',costObjects:'financialCostObjects',allocations:'financialAllocations',actuals:'financialActuals',adjustments:'financialAdjustments',commitments:'financialCommitments',forecasts:'financialForecasts'};
+const COLLECTION={links:'financialBudgetLinks',budgets:'financialBudgets',costObjects:'financialCostObjects',allocations:'financialAllocations',actuals:'financialActuals',adjustments:'financialAdjustments',commitments:'financialCommitments',forecasts:'financialForecasts'};
 const buckets=Object.keys(COLLECTION);
 const now=()=>new Date().toISOString();
 const uid=p=>p+'-'+(globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2));

@@ -361,3 +361,14 @@ This is the single canonical work-history file for the portal. Entries are group
 - Operational Usage: SSBD/Kiosk day/station/system-type transaction counts use an authenticated Firestore `operationalUsage` collection; manual entry and Excel preview/import are offered in Airport Systems. Import detects duplicates and rejects invalid/conflicting dates; existing daily records cannot be silently overwritten or deleted. SSBD report workbook is a source example, not automatically uploaded to production.
 - Role-based dashboard: scoped SSBD and Kiosk usage and current-fiscal-year Approved Budget summaries; no fabricated adoption/availability metrics and no currency mixing.
 - Validation: 59/59 existing regression tests, UI integrity checks, plus `financial-operational-contract.js` pass in source tests. Browser interactive and production Firestore tests remain outstanding. Idle runtime intentionally unchanged.
+
+
+## 2026-11-26 — Initiative Budget Links, Governed Reallocation & Import Preview UX
+
+- Budget & Financial is the only interface for linking imported or manually created budget records to existing Initiatives. Linking without an allocation is allowed for Drafts; positive allocations require approved capacity. Relations are stored as dedicated server-owned records, and Unlink preserves the underlying budget and history.
+- Reallocation records preserve source/destination budget IDs, original PK/AK and Cost Center/Element references, fiscal year, currency, request reason and reference, requester, approver, and approval history. Submit does not change approved values; only a separate authorized approver may approve or reject. Approval atomically adjusts the two revised approved amounts after checking reserved allocations, commitments and actuals.
+- Initiative Detail/Timeline displays linked budgets read-only with links to the central Budget & Financial page; imported PK/AK are accessible in a compact collapsible register instead of permanently occupying a large empty panel. No title-based automatic links.
+- Initiative grid Detail/Timeline and Update use delegated events and normalized IDs, with visible feedback for missing records. A target of 0% is not labelled Exceed; achievement is Not Assessed until a meaningful target is recorded.
+- Integrated Workbook Import preview has one English pagination control for the budget rows; validation conflicts remain available in an expandable, nonpaginated detail list. Import behavior, Cost Element matching and approval rules are unchanged.
+- Firestore production not touched; no migration, implicit deletes or background job. Idle page runtime remains on hold.
+- Validation: repository regression gate plus focused transaction simulation for linking, protected allocations, approvals, rejected transfers, and replay rejection. Live browser and real Firestore permissions still require deploy-preview validation.

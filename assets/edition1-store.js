@@ -10,7 +10,7 @@
     airportSystems:[],skyPriority:[],touchpointStandards:[],gasoMaster:[],gasoServiceSupport:[],gasoPlanningService:[],
     personnel:[],articles:[],announcements:[],faqs:[],inbox:[],auditLogs:[],users:[],lounges:[],
     airlines:[],groundHandlers:[],serviceAlignments:[],airportCosts:[],aircraftConfigs:[],currencies:[],exchangeRates:[],assets:[],facilities:[],
-    standardContent:{},portalManagerR2:{},attentionSettings:{},contactMessages:[],guestbook:[],monitoringTemplates:[],monitoringAssessments:[],formTemplates:[],monitoringWorks:[],formSubmissions:[],customerExperience:[],referenceCatalog:[],requirementMatrix:[],stationCapabilities:[],workPrograms:[],workActivities:[],financialBudgets:[],financialCostObjects:[],financialAllocations:[],financialActuals:[],financialAdjustments:[],financialCommitments:[],financialForecasts:[],operationalUsage:[]
+    standardContent:{},portalManagerR2:{},attentionSettings:{},contactMessages:[],guestbook:[],monitoringTemplates:[],monitoringAssessments:[],formTemplates:[],monitoringWorks:[],formSubmissions:[],customerExperience:[],referenceCatalog:[],requirementMatrix:[],stationCapabilities:[],workPrograms:[],workActivities:[],financialBudgetLinks:[],financialBudgets:[],financialCostObjects:[],financialAllocations:[],financialActuals:[],financialAdjustments:[],financialCommitments:[],financialForecasts:[],operationalUsage:[]
   };
   const deletionsInProgress=new Map();
   const baseline={}; let hydrated=false; let pending=Promise.resolve(); let localRevision=0;

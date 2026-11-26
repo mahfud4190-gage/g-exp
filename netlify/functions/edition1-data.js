@@ -11,10 +11,10 @@ const COLLECTIONS = new Set([
   'airlines','groundHandlers','serviceAlignments','airportCosts','aircraftConfigs','assets','facilities',
   'monitoringTemplates','monitoringAssessments','formTemplates','monitoringWorks','formSubmissions','customerExperience','attentionSettings',
   'referenceCatalog','requirementMatrix','stationCapabilities','planningDomains','currencies','exchangeRates',
-  'workPrograms','workActivities','financialBudgets','financialCostObjects','financialAllocations','financialActuals','financialAdjustments','financialCommitments','financialForecasts','operationalUsage'
+  'workPrograms','workActivities','financialBudgetLinks','financialBudgets','financialCostObjects','financialAllocations','financialActuals','financialAdjustments','financialCommitments','financialForecasts','operationalUsage'
 ]);
 const DATA_GROUP_BY_COLLECTION = Object.fromEntries([...COLLECTIONS].map(name => [name, name]));
-const FINANCIAL_COLLECTIONS = new Set(['workPrograms','workActivities','financialBudgets','financialCostObjects','financialAllocations','financialActuals','financialAdjustments','financialCommitments','financialForecasts']);
+const FINANCIAL_COLLECTIONS = new Set(['workPrograms','workActivities','financialBudgetLinks','financialBudgets','financialCostObjects','financialAllocations','financialActuals','financialAdjustments','financialCommitments','financialForecasts']);
 const METADATA_COLLECTIONS = new Set(['standardContent','portalManager','attentionSettings']);
 function dataRef(db, collection, id) {
   const group = DATA_GROUP_BY_COLLECTION[collection] || collection;
@@ -38,7 +38,7 @@ function isExternalActor(actor){
 }
 function ownsRecord(actor,row){return [row?.ownerUserId,row?.createdBy,row?.actorId,row?.userId].filter(Boolean).map(String).includes(String(actor?.id||''));}
 const MODULE_BY_COLLECTION = {
-  initiatives:'initiatives',workPrograms:'planning',workActivities:'planning', financialBudgets:'planning',financialCostObjects:'planning',financialAllocations:'planning',financialActuals:'planning',financialAdjustments:'planning',financialCommitments:'planning',financialForecasts:'planning',operationalUsage:'planning', projectEvents:'calendar', inbox:'inbox', airports:'data', personnel:'data',
+  initiatives:'initiatives',workPrograms:'planning',workActivities:'planning',financialBudgetLinks:'planning', financialBudgets:'planning',financialCostObjects:'planning',financialAllocations:'planning',financialActuals:'planning',financialAdjustments:'planning',financialCommitments:'planning',financialForecasts:'planning',operationalUsage:'planning', projectEvents:'calendar', inbox:'inbox', airports:'data', personnel:'data',
   lounges:'planning', loungeVisitors:'lounge-visitor', loungePurchases:'lounge-purchase', flightSchedule:'lounge-flights',
   stationMaterials:'planning', boSpaces:'planning', serviceProcurement:'planning', airportSystems:'planning',
   gasoMaster:'planning', gasoServiceSupport:'planning', gasoPlanningService:'planning', documents:'planning',
@@ -196,7 +196,7 @@ async function bumpCacheVersion(db,collection){
 }
 async function writeOne(db,actor,collection,action,id,raw,{initiativeImport=false}={}){
   if(!COLLECTIONS.has(collection)) throw Object.assign(new Error(`Collection not allowed: ${collection}`),{statusCode:400,code:'COLLECTION_NOT_ALLOWED'});
-  if(['workPrograms','workActivities'].includes(collection))throw Object.assign(new Error('Company PK/AK records are managed through the validated Budget Workbook Import.'),{statusCode:403,code:'COMPANY_CODE_SERVER_ONLY'});
+  if(['workPrograms','workActivities','financialBudgetLinks'].includes(collection))throw Object.assign(new Error('Company PK/AK records are managed through the validated Budget Workbook Import.'),{statusCode:403,code:'COMPANY_CODE_SERVER_ONLY'});
   if(!(collection==='inbox' && ['CREATE','UPDATE','DELETE'].includes(action)) && !(collection==='contactMessages' && action==='CREATE' && !isExternalActor(actor)) && !canWrite(actor,collection)) throw Object.assign(new Error(`Write access denied for ${collection}.`),{statusCode:403,code:'FORBIDDEN'});
   if(['users','auditLogs'].includes(collection) && !(actor.role==='Super Admin'||isOperationalAdmin(actor))) throw Object.assign(new Error('Administrative access required.'),{statusCode:403,code:'FORBIDDEN'});
   if(collection==='formSubmissions' && !isOperationalAdmin(actor) && actor.role!=='Super Admin' && action!=='CREATE') throw Object.assign(new Error('Submitted forms cannot be edited by the submitter.'),{statusCode:403,code:'SUBMISSION_IMMUTABLE'});
@@ -474,6 +474,92 @@ function validateImportRows(rows,owner,year){
  }
  return out;
 }
+// Canonical budget relationships and governed reallocations. Both are server-owned.
+// Financial ledger entries are retained, not deleted by client-side changes.
+function financialError(code,message,statusCode=400){return Object.assign(new Error(message),{code,statusCode});}
+function effectiveApproved(b){const n=b.revisedApprovedAmount??b.approvedAmount;return n==null?null:Number(n);}
+async function budgetRelationshipAction(db,actor,body){
+ if(isExternalActor(actor)||!canWrite(actor,'financialBudgets'))throw financialError('FORBIDDEN','Budget editing access is required.',403);
+ const type=String(body.action||'').toUpperCase(),now=new Date().toISOString();
+ const identifier=x=>cleanId(x);
+ const audit=(tx,action,detail)=>tx.create(dataQuery(db,'auditLogs').doc(),{actorId:actor.id,actorRole:actor.role,module:'Budget & Financial',action,timestamp:now,detail,result:'SUCCESS'});
+ if(type==='LINK_BUDGET_INITIATIVE'||type==='UNLINK_BUDGET_INITIATIVE'){
+   const budgetId=identifier(body.budgetId),initiativeId=identifier(body.initiativeId);
+   const budgetRef=dataRef(db,'financialBudgets',budgetId),initiativeRef=dataRef(db,'initiatives',initiativeId);
+   const crypto=require('crypto');const linkId='bil-'+crypto.createHash('sha256').update(budgetId+'|'+initiativeId).digest('hex').slice(0,32),linkRef=dataRef(db,'financialBudgetLinks',linkId);
+   const unlink=type==='UNLINK_BUDGET_INITIATIVE';
+   const allocated=body.allocatedAmount==null||body.allocatedAmount===''?null:Number(body.allocatedAmount);
+   if(!unlink&&(allocated!==null&&(!Number.isFinite(allocated)||allocated<0)))throw financialError('ALLOCATION_INVALID','Allocation must be a nonnegative number.');
+   const result=await db.runTransaction(async tx=>{
+     const [bs,is,ls]=await Promise.all([tx.get(budgetRef),tx.get(initiativeRef),tx.get(linkRef)]);
+     if(!bs.exists||!is.exists)throw financialError('REFERENCE_NOT_FOUND','Budget or Initiative does not exist.',404);
+     const b=bs.data()||{},initiative=is.data()||{};
+     if(!inScope(actor,b)||!inScope(actor,initiative))throw financialError('SCOPE_FORBIDDEN','Budget or Initiative is outside your scope.',403);
+     const prior=ls.data()||{};
+     if(unlink){if(!ls.exists||prior.status!=='Active')return {id:linkId,status:'Unlinked',unchanged:true};
+       if(Number(prior.allocatedAmount||0)>0)throw financialError('ALLOCATION_RELEASE_REQUIRED','Release the Initiative allocation before unlinking.',409);
+       tx.update(linkRef,{status:'Unlinked',updatedAt:now,updatedBy:actor.id});audit(tx,'Unlink','Budget '+budgetId+' unlinked from Initiative '+initiativeId);return {id:linkId,status:'Unlinked'};}
+     // Link without an allocation is allowed for draft and imported budgets.
+     // Allocated amounts require an approved budget and must fit available capacity.
+     if(allocated!=null&&allocated>0){const approved=effectiveApproved(b);if(approved==null||!Number.isFinite(approved)||approved<0)throw financialError('APPROVAL_REQUIRED','Approve the budget before allocating funds.',409);
+       const links=await tx.get(dataQuery(db,'financialBudgetLinks').where('budgetId','==',budgetId));
+       const used=links.docs.reduce((n,d)=>d.id===linkId||d.data().status!=='Active'?n:n+Number(d.data().allocatedAmount||0),0);
+       if(used+allocated>approved+0.00001)throw financialError('ALLOCATION_EXCEEDS_BUDGET','Total Initiative allocations exceed the effective approved budget.',409);
+     }
+     const record={budgetId,initiativeId,allocatedAmount:allocated===null?(ls.exists?prior.allocatedAmount??null:null):allocated,currency:String(b.currency||'IDR'),year:b.year||'',station:b.station||'',status:'Active',updatedAt:now,updatedBy:actor.id};
+     if(ls.exists)tx.update(linkRef,record);else tx.create(linkRef,{...record,createdAt:now,createdBy:actor.id});
+     audit(tx,'Link','Budget '+budgetId+' linked to Initiative '+initiativeId);
+     return {id:linkId,status:'Active',allocatedAmount:record.allocatedAmount};
+   });await bumpCacheVersion(db,'financialBudgetLinks');return result;
+ }
+ if(type==='SUBMIT_BUDGET_REALLOCATION'){
+   const sourceId=identifier(body.sourceBudgetId),destinationId=identifier(body.destinationBudgetId),amount=Number(body.amount),reason=String(body.reason||'').trim(),reference=String(body.reference||'').trim();
+   if(sourceId===destinationId||!Number.isFinite(amount)||amount<=0||!reason||!reference)throw financialError('REALLOCATION_INVALID','Select different budgets, a positive amount, reason and reference.');
+   const srcRef=dataRef(db,'financialBudgets',sourceId),dstRef=dataRef(db,'financialBudgets',destinationId),transferRef=dataQuery(db,'financialAdjustments').doc();
+   const result=await db.runTransaction(async tx=>{
+     const [a,b]=await Promise.all([tx.get(srcRef),tx.get(dstRef)]);if(!a.exists||!b.exists)throw financialError('BUDGET_NOT_FOUND','Source or destination budget was not found.',404);
+     const src=a.data(),dst=b.data();if(!inScope(actor,src)||!inScope(actor,dst))throw financialError('SCOPE_FORBIDDEN','Budget outside your scope.',403);
+     if(String(src.currency||'IDR')!==String(dst.currency||'IDR')||String(src.year)!==String(dst.year))throw financialError('REALLOCATION_SCOPE','Source and destination must use the same currency and fiscal year.',409);
+     if(effectiveApproved(src)==null||effectiveApproved(dst)==null)throw financialError('APPROVAL_REQUIRED','Both budgets must have approved amounts.',409);
+     tx.create(transferRef,{kind:'Budget Reallocation',sourceBudgetId:sourceId,destinationBudgetId:destinationId,amount,currency:src.currency||'IDR',year:src.year,sourcePkCode:src.pkCode||'',sourceAkCode:src.akCode||'',sourceCostCenter:src.costCenter||'',sourceCostElement:src.costElement||'',destinationPkCode:dst.pkCode||'',destinationAkCode:dst.akCode||'',destinationCostCenter:dst.costCenter||'',destinationCostElement:dst.costElement||'',reason,reference,status:'Submitted',createdBy:actor.id,createdAt:now,updatedAt:now});audit(tx,'Submit Reallocation','From '+sourceId+' to '+destinationId+' amount '+amount);return {id:transferRef.id,status:'Submitted'};
+   });await bumpCacheVersion(db,'financialAdjustments');return result;
+ }
+ if(type==='DECIDE_BUDGET_REALLOCATION'){
+   const id=identifier(body.reallocationId),decision=String(body.decision||'').toUpperCase();
+   if(!['APPROVE','REJECT'].includes(decision))throw financialError('DECISION_INVALID','Choose Approve or Reject.');
+   if(!(actor.role==='Super Admin'||isOperationalAdmin(actor)))throw financialError('APPROVER_REQUIRED','Authorized management approval is required.',403);
+   const ref=dataRef(db,'financialAdjustments',id),head=await ref.get();if(!head.exists)throw financialError('REQUEST_NOT_FOUND','Reallocation request not found.',404);
+   const request=head.data()||{};if(request.kind!=='Budget Reallocation')throw financialError('REQUEST_TYPE','Not a budget reallocation.',400);
+   if(String(request.createdBy)===String(actor.id))throw financialError('SEPARATION_OF_DUTIES','Requester cannot approve their own reallocation.',403);
+   const aRef=dataRef(db,'financialBudgets',cleanId(request.sourceBudgetId)),bRef=dataRef(db,'financialBudgets',cleanId(request.destinationBudgetId));
+   const result=await db.runTransaction(async tx=>{
+     const [r,a,b]=await Promise.all([tx.get(ref),tx.get(aRef),tx.get(bRef)]);
+     if(!r.exists||r.data().status!=='Submitted')throw financialError('ALREADY_DECIDED','Request is no longer pending.',409);
+     if(!a.exists||!b.exists)throw financialError('BUDGET_NOT_FOUND','One of the budgets no longer exists.',409);
+     const src=a.data(),dst=b.data();if(!inScope(actor,src)||!inScope(actor,dst))throw financialError('SCOPE_FORBIDDEN','Budget outside your scope.',403);
+     const update={status:decision==='APPROVE'?'Approved':'Rejected',approvedBy:actor.id,approvedAt:now,updatedAt:now};
+     if(decision==='APPROVE'){
+       const amount=Number(r.data().amount),srcAmount=effectiveApproved(src),dstAmount=effectiveApproved(dst);
+       if(srcAmount==null||dstAmount==null||srcAmount<amount)throw financialError('INSUFFICIENT_BUDGET','Approved source budget is insufficient.',409);
+       // Protect active allocations, recorded actuals and commitments before transferring.
+       const [links,alloc,comm,actual]=await Promise.all([
+         tx.get(dataQuery(db,'financialBudgetLinks').where('budgetId','==',aRef.id)),
+         tx.get(dataQuery(db,'financialAllocations').where('budgetId','==',aRef.id)),
+         tx.get(dataQuery(db,'financialCommitments').where('budgetId','==',aRef.id)),
+         tx.get(dataQuery(db,'financialActuals').where('budgetId','==',aRef.id))]);
+       const total=sn=>sn.docs.reduce((sum,d)=>sum+Math.max(0,Number(d.data().amount||0)),0);
+       const linked=links.docs.reduce((n,d)=>d.data().status==='Active'?n+Number(d.data().allocatedAmount||0):n,0);
+       const protectedAmount=Math.max(linked,total(alloc),total(comm)+total(actual));
+       if(srcAmount-amount<protectedAmount-0.00001)throw financialError('SOURCE_FUNDS_RESERVED','Source funds are already allocated, committed or realized.',409);
+       const oldSrc=srcAmount,oldDst=dstAmount;tx.update(aRef,{revisedApprovedAmount:srcAmount-amount,updatedAt:now,updatedBy:actor.id});tx.update(bRef,{revisedApprovedAmount:dstAmount+amount,updatedAt:now,updatedBy:actor.id});
+       update.previousSourceApproved=oldSrc;update.previousDestinationApproved=oldDst;update.newSourceApproved=srcAmount-amount;update.newDestinationApproved=dstAmount+amount;
+     }
+     tx.update(ref,update);audit(tx,decision==='APPROVE'?'Approve Reallocation':'Reject Reallocation','Request '+id);return {id,status:update.status};
+   });await bumpCacheVersion(db,'financialAdjustments');return result;
+ }
+ throw financialError('ACTION_UNKNOWN','Unknown budget operation.');
+}
+
 async function budgetWorkbookImport(db,actor,body){
  if(!canWrite(actor,'financialBudgets')||isExternalActor(actor))throw importError('IMPORT_FORBIDDEN','Budget import requires internal planning edit access.',403);
  const owner=importOwner(actor,body.owner),year=Number(body.year),rows=validateImportRows(body.rows,owner,year);
@@ -593,6 +679,7 @@ exports.handler=async(event)=>{
     if(event.httpMethod==='POST'){
       let body; try{body=JSON.parse(event.body||'{}')}catch{return bad(400,'INVALID_JSON','Invalid JSON body.')}
       const collection=String(body.collection||'').trim(); const action=String(body.action||'').toUpperCase();
+      if(['LINK_BUDGET_INITIATIVE','UNLINK_BUDGET_INITIATIVE','SUBMIT_BUDGET_REALLOCATION','DECIDE_BUDGET_REALLOCATION'].includes(action))return ok({ok:true,source:'Firestore',result:await budgetRelationshipAction(db,actor,body)});
       if(action==='IMPORT_BUDGET_WORKBOOK')return ok({ok:true,source:'Firestore',result:await budgetWorkbookImport(db,actor,body)});
       if(action==='BATCH'){
         const changes=Array.isArray(body.changes)?body.changes:[];

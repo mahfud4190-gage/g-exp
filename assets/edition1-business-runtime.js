@@ -30,7 +30,7 @@ async function geDeleteFirestoreRecord(collection,id){
     return false;
   }
 }
-function achievement(plan,real){return +real<+plan?'Below':(+real===+plan?'Meet':'Exceed')}
+function achievement(plan,real){if(plan==null||plan===''||!Number.isFinite(Number(plan))||real==null||real===''||!Number.isFinite(Number(real))||Number(plan)<=0)return 'Not Assessed';return Number(real)<Number(plan)?'Below':(Number(real)===Number(plan)?'Meet':'Exceed')}
 function achievementPill(plan,real){
  const s=achievement(plan,real);
  const c=s==='Below'?'danger':(s==='Meet'?'warn':'');
@@ -4406,9 +4406,9 @@ function geDueLabelV224(x){
 function geInitiativeManageButtonsV224(x){
   const listView=window.GE_INITIATIVE_VIEW==='list'||document.getElementById('geInitiativeViewSelect')?.value==='list';
   const parts=[];
-  if(!listView)parts.push(`<button class="ge-btn secondary compact-btn" onclick="openInitiativeTimelineV224(${x.id})">Detail / Timeline</button>`);
+  if(!listView)parts.push(`<button type="button" class="ge-btn secondary compact-btn" data-ge-initiative-action="timeline" data-ge-initiative-id="${geEsc(String(x.id))}">Detail / Timeline</button>`);
   if(geInitiativeAdminV224()){
-    parts.push(`<button class="ge-btn secondary compact-btn" onclick="openInitiativeModalV224(${x.id})">Update</button>`);
+    parts.push(`<button type="button" class="ge-btn secondary compact-btn" data-ge-initiative-action="update" data-ge-initiative-id="${geEsc(String(x.id))}">Update</button>`);
     parts.push(`<button class="ge-btn danger compact-btn" onclick="deleteInitiativeV224(${x.id})">Delete</button>`);
   }else if(!listView&&geInitiativeProgressAllowedV224(x)){
     parts.push(`<button class="ge-btn secondary compact-btn" onclick="openInitiativeProgressV224(${x.id})">Edit Progress</button>`);
@@ -4416,6 +4416,15 @@ function geInitiativeManageButtonsV224(x){
   return `<div class="initiative-actions-v224">${parts.join('')}</div>`;
 }
 
+// Delegated actions survive grid re-render and string company IDs.
+if(!window.geInitiativeActionsBoundV1){window.geInitiativeActionsBoundV1=true;
+ document.addEventListener('click',event=>{const button=event.target.closest('[data-ge-initiative-action]');if(!button)return;
+   const id=button.dataset.geInitiativeId,action=button.dataset.geInitiativeAction;
+   const row=(data.initiatives||[]).find(x=>String(x.id)===String(id));
+   if(!row){geStorageNoticeV223('Initiative Unavailable','This Initiative is no longer available in your accessible records.','error');return;}
+   try{if(action==='timeline')window.openInitiativeTimelineV224?.(row.id);else if(action==='update')window.openInitiativeModalV224?.(row.id);}
+   catch(error){geStorageNoticeV223('Unable to Open Initiative',error.message||String(error),'error');}
+ });}
 /* Final initiative renderer */
 renderInitiatives=function(){
   refreshInitiativeFilters();
@@ -4631,7 +4640,7 @@ function geWorkflowStatusClassV224(status){
   return String(status||'').toLowerCase().replace(/\s+/g,'-');
 }
 function openInitiativeTimelineV224(id){
-  const x=(data.initiatives||[]).find(v=>v.id===id);if(!x)return;
+  const x=(data.initiatives||[]).find(v=>String(v.id)===String(id));if(!x)return;
   x.workflow=Array.isArray(x.workflow)?x.workflow:[];
   geInitDocsV227(x);
   const steps=x.workflow;
@@ -4662,6 +4671,10 @@ function openInitiativeTimelineV224(id){
         </div>`).join(''):`<div class="planning-empty">Belum ada tahapan pekerjaan. ${geInitiativeAdminV224()?'Add a milestone to start tracking progress.':''}</div>`}
     </div>
     ${geInitiativeDocumentsSectionV227(x)}`;
+  // Detail-only budget view. No second budget writer on the Initiative page.
+  const linked=document.createElement('section');linked.id='initiativeLinkedBudgetDetail';linked.className='ge-panel';linked.dataset.initiativeId=String(x.id);
+  initiativeTimelineBodyV224.appendChild(linked);
+  window.dispatchEvent(new Event('gexp-initiative-detail-opened'));
   initiativeTimelineModalV224.classList.add('show');
   const timelineCardV224=initiativeTimelineModalV224.querySelector('.initiative-dialog-card');if(timelineCardV224)timelineCardV224.scrollTop=0;
 }
