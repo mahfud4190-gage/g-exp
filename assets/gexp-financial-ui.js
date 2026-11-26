@@ -26,6 +26,43 @@ function fillEdit(x){$('bEditId').value=x.id;const map={bName:x.name,bYear:x.yea
  forecastRows=(Array.isArray(x.annualForecasts)?x.annualForecasts:[]).map(r=>({year:r.year,rate:r.ratePerVisitor,visitors:r.forecastVisitors,escalationPercent:r.escalationPercent}));drawForecastRows();updatePlanningOptions();$('bPlanningRef').value=x.planningCollection&&x.planningRecordId?x.planningCollection+':'+x.planningRecordId:'';showLounge();$('saveBudget').textContent='Update Budget';$('bName').focus();}
 function clearEdit(){for(const id of ['bEditId','bName','bYear','bStation','bRegion','bCategory','bProposed','bApproved','bRevised','bRef','bFunding','bNotes','bInitiative','bDomain','bPlanningRef','bCostCenter','bCostElement','bEscalation','bRate','bVisitors','bCalculated','bRateFrom','bRateTo'])if($(id))$(id).value='';$('bOwner').value='BO';$('bCur').value='IDR';$('bStatus').value='Draft';$('saveBudget').textContent='Save Budget';forecastRows=[];drawForecastRows();showLounge();}
 function projection(x){if(x.planningDomain!=='LOUNGE')return null;const r=x.ratePerVisitor,v=x.annualForecastVisitors;if(r==null||v==null||!Number.isFinite(Number(r))||!Number.isFinite(Number(v)))return null;const escalation=x.annualEscalationPercent;return {base:Number(r)*Number(v),next:escalation==null?null:Number(r)*(1+Number(escalation)/100)*Number(v)};}
+/* Read-only worksheet for the selected Budget Register record.
+ * Uses the existing persisted calculation basis; no second budget authoring path. */
+let worksheetBudgetId='';
+function worksheetDetail(x){
+ const host=$('budgetWorksheetDetail');if(!host)return;
+ if(!x){host.hidden=true;host.replaceChildren();return;}
+ const curr=x.currency||'IDR',money=n=>fmt(n,curr),available=n=>n!==null&&n!==undefined&&n!==''&&Number.isFinite(Number(n));
+ const line=(k,v)=>`<tr><th scope="row">${esc(k)}</th><td>${esc(v??'Not available')}</td></tr>`;
+ const rate=available(x.rate)?Number(x.rate):available(x.ratePerVisitor)?Number(x.ratePerVisitor):null;
+ const qty=available(x.quantity)?Number(x.quantity):available(x.annualForecastVisitors)?Number(x.annualForecastVisitors):null;
+ const derived=rate===null||qty===null?null:rate*qty;
+ const isLounge=x.planningDomain==='LOUNGE'||String(x.category||'').toLowerCase()==='lounge';
+ const annual=Array.isArray(x.annualForecasts)?x.annualForecasts:[];
+ const rows=annual.length?annual.map(r=>{
+  const rRate=available(r.ratePerVisitor)?Number(r.ratePerVisitor):null;
+  const rVisitors=available(r.forecastVisitors)?Number(r.forecastVisitors):null;
+  const calc=rRate===null||rVisitors===null?null:rRate*rVisitors;
+  return `<tr><td>${esc(r.year??'—')}</td><td>${money(rRate)}</td><td>${rVisitors===null?'Not available':esc(rVisitors.toLocaleString('en-US',{maximumFractionDigits:2}))}</td><td>${available(r.escalationPercent)?esc(r.escalationPercent)+'%':'Not specified'}</td><td>${money(calc)}</td></tr>`;
+ }).join(''):'';
+ const monthly=Array.isArray(x.monthlyAllocation)?x.monthlyAllocation:[];
+ const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+ const period=monthly.length?`<h4>Monthly Cost Allocation</h4><div class="ge-table-wrap"><table data-table-manual><thead><tr><th>Month</th><th>Amount</th></tr></thead><tbody>${months.map((m,i)=>`<tr><td>${m}</td><td>${money(monthly[i])}</td></tr>`).join('')}</tbody></table></div>`:'';
+ const calculation=isLounge?(annual.length?`<h4>Multi-Year Lounge Calculation</h4><div class="ge-table-wrap"><table data-table-manual><thead><tr><th>Fiscal Year</th><th>Rate / Visitor</th><th>Forecast Visitors</th><th>Escalation</th><th>Estimated Cost</th></tr></thead><tbody>${rows}</tbody></table></div>`:`<h4>Lounge Cost Calculation</h4><p>Rate per Visitor × Forecast Visitors = ${money(derived)}.</p>`):`<h4>Cost Calculation</h4><p>${rate!==null&&qty!==null?`Quantity ${esc(qty.toLocaleString('en-US',{maximumFractionDigits:2}))} × Unit Rate ${money(rate)} = ${money(derived)}.`:'The source does not contain a complete quantity and rate calculation. No estimate is inferred.'}</p>`;
+ host.hidden=false;
+ host.innerHTML=`<div class="ge-panel-head"><div><h3>Budget Worksheet</h3><p>${esc(x.businessCode||x.id)} · ${esc(x.name||'Budget')}</p></div><button type="button" class="ge-btn secondary" id="closeBudgetWorksheet">Close</button></div>
+ <p>Calculation basis and original workbook references for this budget. Budget changes are managed in Budget &amp; Financial.</p>
+ <div class="ge-table-wrap"><table data-table-manual><tbody>
+ ${line('Fiscal Year',x.year||'Not available')}${line('Station',x.station||'Not available')}
+ ${line('PK / AK',[x.pkCode,x.akCode].filter(Boolean).join(' · ')||'Not available')}
+ ${line('Cost Center',x.costCenter||'Not available')}${line('Cost Element',[x.costElement,x.costElementName].filter(Boolean).join(' · ')||'Not available')}
+ ${line('Contract Period',x.contractPeriod||'Not available')}
+ ${line('Source',[x.sourceSheet,x.sourceRow?'Row '+x.sourceRow:''].filter(Boolean).join(' · ')||'Manual Entry')}
+ ${line('Currency',curr)}${line('Proposed Budget',money(x.proposedAmount))}
+ ${line('Approved Budget',money(x.approvedAmount))}${line('Revised Approved Budget',money(x.revisedApprovedAmount))}
+ </tbody></table></div>${calculation}${period}`;
+ $('closeBudgetWorksheet')?.addEventListener('click',()=>{worksheetBudgetId='';worksheetDetail(null)});
+}
 function refresh(){const d=GEBudgetCost.read();
  const currencyCodes=[...new Set(['IDR',...(state().currencies||[]).filter(x=>x.status!=='Inactive').map(x=>String(x.code||'').toUpperCase()).filter(x=>/^[A-Z]{3}$/.test(x))])].sort();
  for(const id of ['bCur','cCur']){const old=value(id)||'IDR';$(id).innerHTML=currencyCodes.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');$(id).value=currencyCodes.includes(old)?old:'IDR';}
@@ -37,9 +74,11 @@ const stats=GEBudgetCost.stats();$('mB').textContent=stats.budgets;$('mC').textC
  options('fBudget',d.budgets,'Select budget',x=>[x.businessCode,x.name,x.station,x.year].filter(Boolean).join(' · '));
  options('fCost',d.costObjects,'Select cost object',x=>[x.name,x.station].filter(Boolean).join(' · '));
  updatePlanningOptions();showLounge();drawForecastRows();
- const budgetRows=d.budgets.map(x=>{const pos=GEBudgetCost.budgetPosition(x.id),calc=projection(x);return `<tr><td>${esc(x.businessCode||x.id)}</td><td><b>${esc(x.name||'Draft')}</b><div>${esc([x.pkCode,x.akCode].filter(Boolean).join(' · ')||x.planningDomain||x.category||'')}</div></td><td>${esc(x.station||x.ownerType||'HO')}</td><td>${esc(x.year||'—')}</td><td>${fmt(x.proposedAmount,x.currency)}</td><td>${fmt(x.revisedApprovedAmount??x.approvedAmount,x.currency)}</td><td>${fmt(calc?.base,x.currency)}${calc?.next!=null?`<small> · Next year at ${esc(x.annualEscalationPercent)}%: ${fmt(calc.next,x.currency)}</small>`:''}</td><td>${fmt(pos?.actual,x.currency)}</td><td>${esc(x.status||'Draft')}</td><td><button type="button" class="ge-btn" data-edit-budget="${esc(x.id)}">Edit</button></td></tr>`}).join('');
+ const budgetRows=d.budgets.map(x=>{const pos=GEBudgetCost.budgetPosition(x.id),calc=projection(x);return `<tr><td>${esc(x.businessCode||x.id)}</td><td><b>${esc(x.name||'Draft')}</b><div>${esc([x.pkCode,x.akCode].filter(Boolean).join(' · ')||x.planningDomain||x.category||'')}</div></td><td>${esc(x.station||x.ownerType||'HO')}</td><td>${esc(x.year||'—')}</td><td>${fmt(x.proposedAmount,x.currency)}</td><td>${fmt(x.revisedApprovedAmount??x.approvedAmount,x.currency)}</td><td>${fmt(calc?.base,x.currency)}${calc?.next!=null?`<small> · Next year at ${esc(x.annualEscalationPercent)}%: ${fmt(calc.next,x.currency)}</small>`:''}</td><td>${fmt(pos?.actual,x.currency)}</td><td>${esc(x.status||'Draft')}</td><td><button type="button" class="ge-btn secondary" data-budget-worksheet="${esc(x.id)}">Worksheet</button> <button type="button" class="ge-btn" data-edit-budget="${esc(x.id)}">Edit</button></td></tr>`}).join('');
  $('register').innerHTML=`<table><thead><tr><th>Budget ID</th><th>Budget / Domain</th><th>Station / Owner</th><th>Fiscal Year</th><th>Proposed</th><th>Approved / Revised</th><th>Annual Cost Estimate</th><th>Actual</th><th>Status</th><th>Action</th></tr></thead><tbody>${budgetRows||'<tr><td colspan="10">No budgets recorded.</td></tr>'}</tbody></table>`;
  $('register').querySelectorAll('[data-edit-budget]').forEach(btn=>btn.addEventListener('click',()=>{const x=d.budgets.find(x=>String(x.id)===btn.dataset.editBudget);if(x)fillEdit(x)}));
+ $('register').querySelectorAll('[data-budget-worksheet]').forEach(btn=>btn.addEventListener('click',()=>{worksheetBudgetId=btn.dataset.budgetWorksheet;worksheetDetail(d.budgets.find(x=>String(x.id)===worksheetBudgetId));}));
+ if(worksheetBudgetId)worksheetDetail(d.budgets.find(x=>String(x.id)===worksheetBudgetId));
 }
 async function submit(button,save){if(button.disabled)return;button.disabled=true;status('Saving to Firestore…');try{await save();refresh();status('Saved successfully and confirmed by server.')}catch(e){status('Save failed: '+(e?.message||e))}finally{button.disabled=false}}
 function saveBudget(){const raw=value('bPlanningRef'),split=raw.indexOf(':');const planningCollection=split>=0?raw.slice(0,split):'',planningRecordId=split>=0?raw.slice(split+1):'';const rate=amount('bRate'),visitors=amount('bVisitors'),annualEscalationPercent=amount('bEscalation');

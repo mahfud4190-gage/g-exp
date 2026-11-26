@@ -372,3 +372,9 @@ This is the single canonical work-history file for the portal. Entries are group
 - Integrated Workbook Import preview has one English pagination control for the budget rows; validation conflicts remain available in an expandable, nonpaginated detail list. Import behavior, Cost Element matching and approval rules are unchanged.
 - Firestore production not touched; no migration, implicit deletes or background job. Idle page runtime remains on hold.
 - Validation: repository regression gate plus focused transaction simulation for linking, protected allocations, approvals, rejected transfers, and replay rejection. Live browser and real Firestore permissions still require deploy-preview validation.
+
+## 2026-11-26 — Initiative Save Completion & Per-Budget Worksheet
+- Initiative Save now uses the actual submit control and awaits a single authoritative Firestore `saveRecord` confirmation for the Initiative; modal closes and shows success after confirmed persistence. Failed saves keep form data and modal visible. A concurrent duplicate submit is blocked.
+- PIC assignment notification runs as a separate follow-up and cannot block a successful Initiative save or keep the modal open; notification failure is reported separately. No automatic deletion or migration.
+- Budget & Financial Register adds a read-only Worksheet action for each budget. It displays source workbook sheet/row, PK/AK and Cost Center/Element, Proposed/Approved/Revised amounts, and persisted calculation lines: yearly Lounge rate × visitors and Summary quantity × rate / monthly breakdown when present. Missing inputs display Not available rather than zero. Edit stays in the existing Budget & Financial form.
+- No changes to server financial approval, Firestore collections, Idle runtime, or unrelated modules. Existing source regression gate was updated for the corrected Initiative save contract and adds a Worksheet contract. Browser/production Firestore verification still required.
