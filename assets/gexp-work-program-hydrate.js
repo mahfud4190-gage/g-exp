@@ -1,0 +1,2 @@
+/* Read-only PK/AK register: uses the same authenticated Firestore source. */
+(function(){'use strict';if(!window.GEStore)return;GEStore.waitAuth().then(()=>GEStore.hydrate(['workPrograms','workActivities'])).then(()=>{window.geRenderLinkedFinancial?.()}).catch(e=>{const host=document.getElementById('initiativeWorkProgramRegister');if(host)host.textContent='Unable to load Work Programs: '+e.message;});})();

@@ -1,3 +1,14 @@
+## 2026-11-26 — Integrated Budget Workbook Import (PK / AK / Cost Element / Lounge)
+
+- Budget & Financial is the only workbook import entry point; Initiative shows a **read-only** Work Program / Activity register with links to related budget records.
+- Added `Summary` → Work Programs (PK), Work Activities (AK) and individual Draft financial budget lines. Company PK/AK identity uses **owner + fiscal year + code/number**, not title: the supplied workbook contains identical PK titles under multiple legitimate codes (e.g. PK 35/70/91). Existing PK/AK numbers are preserved when valid; missing codes are allocated atomically by fiscal year and organizational owner. Numbering follows the currently evidenced company convention `YY.OWNER.PK` and `YY.OWNER.PK.AK`. The executing unit is recorded separately from the organizational owner.
+- Added `Kertas Kerja` → annual Lounge budget proposals by station/provider/year, keeping rate and forecast visitor volume (including non-integer planning estimates) without rounding or implicit approval. Missing visitor values remain null / incomplete Drafts, never inferred as 0; the supplied workbook has three incomplete Lounge fiscal forecasts.
+- Added `List CE` mapping to a distinct Cost Element master reference (`referenceCatalog.kind=costElement`). Existing active codes are reused; only Superadmin can explicitly register missing referenced Cost Elements from the workbook, with preview. Cost Component master is not substituted.
+- Added server-verified import preview, explicit confirmation, atomic Firestore transaction, company-code collision checks, deterministic re-import identity, conflict rejection instead of silent overwrite, audit log, and server cache version bump. No deletes, no production data migration, no browser-local business-data writes.
+- Approved / Revised Approved amounts remain **unset** on import. Manual budget authoring retains its existing approval permissions and only uses active Cost Elements from Master Data.
+- Automated validation: repository regression gate 59/59 and isolated import transaction contract (preview, master matching, idempotence, company PK/AK numbers, duplicate titles with distinct codes, incomplete Lounge forecasts, proposal conflict). The supplied sample `Budgeting.xlsx` was parsed as 38 Summary lines + 84 Lounge annual lines = 122 valid draft lines.
+- Limitations: no live Netlify/browser production session tested. Existing Initiative matching is **not auto-guessed by title**; imported PK/AK are shown read-only in the Initiative register and budget associations can be reconciled explicitly. Runtime idle fix remains on hold.
+
 # Ground Experience Portal — Work History
 
 This is the single canonical work-history file for the portal. Entries are grouped by functional area/page so changes, root causes, deleted files, and validation can be traced without versioned history files.

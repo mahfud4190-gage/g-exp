@@ -11,10 +11,10 @@ const COLLECTIONS = new Set([
   'airlines','groundHandlers','serviceAlignments','airportCosts','aircraftConfigs','assets','facilities',
   'monitoringTemplates','monitoringAssessments','formTemplates','monitoringWorks','formSubmissions','customerExperience','attentionSettings',
   'referenceCatalog','requirementMatrix','stationCapabilities','planningDomains','currencies','exchangeRates',
-  'financialBudgets','financialCostObjects','financialAllocations','financialActuals','financialAdjustments','financialCommitments','financialForecasts','operationalUsage'
+  'workPrograms','workActivities','financialBudgets','financialCostObjects','financialAllocations','financialActuals','financialAdjustments','financialCommitments','financialForecasts','operationalUsage'
 ]);
 const DATA_GROUP_BY_COLLECTION = Object.fromEntries([...COLLECTIONS].map(name => [name, name]));
-const FINANCIAL_COLLECTIONS = new Set(['financialBudgets','financialCostObjects','financialAllocations','financialActuals','financialAdjustments','financialCommitments','financialForecasts']);
+const FINANCIAL_COLLECTIONS = new Set(['workPrograms','workActivities','financialBudgets','financialCostObjects','financialAllocations','financialActuals','financialAdjustments','financialCommitments','financialForecasts']);
 const METADATA_COLLECTIONS = new Set(['standardContent','portalManager','attentionSettings']);
 function dataRef(db, collection, id) {
   const group = DATA_GROUP_BY_COLLECTION[collection] || collection;
@@ -38,7 +38,7 @@ function isExternalActor(actor){
 }
 function ownsRecord(actor,row){return [row?.ownerUserId,row?.createdBy,row?.actorId,row?.userId].filter(Boolean).map(String).includes(String(actor?.id||''));}
 const MODULE_BY_COLLECTION = {
-  initiatives:'initiatives', financialBudgets:'planning',financialCostObjects:'planning',financialAllocations:'planning',financialActuals:'planning',financialAdjustments:'planning',financialCommitments:'planning',financialForecasts:'planning',operationalUsage:'planning', projectEvents:'calendar', inbox:'inbox', airports:'data', personnel:'data',
+  initiatives:'initiatives',workPrograms:'planning',workActivities:'planning', financialBudgets:'planning',financialCostObjects:'planning',financialAllocations:'planning',financialActuals:'planning',financialAdjustments:'planning',financialCommitments:'planning',financialForecasts:'planning',operationalUsage:'planning', projectEvents:'calendar', inbox:'inbox', airports:'data', personnel:'data',
   lounges:'planning', loungeVisitors:'lounge-visitor', loungePurchases:'lounge-purchase', flightSchedule:'lounge-flights',
   stationMaterials:'planning', boSpaces:'planning', serviceProcurement:'planning', airportSystems:'planning',
   gasoMaster:'planning', gasoServiceSupport:'planning', gasoPlanningService:'planning', documents:'planning',
@@ -183,7 +183,7 @@ async function readCollection(db,actor,c){
     rows=rows.map(x=>({...x,createdByAccessLevel:creators.get(String(x.createdBy))?.accessLevel||x.createdByAccessLevel||'',createdByRole:creators.get(String(x.createdBy))?.role||x.createdByRole||''}));
   }
   if(c!=='inbox' && c!=='contactMessages' && c!=='users' && c!=='auditLogs' && !(['initiatives','projectEvents'].includes(c)&&isExternalActor(actor))) rows=rows.filter(x=>inScope(actor,x));
-  if(FINANCIAL_COLLECTIONS.has(c) && allowedStations(actor))rows=rows.filter(x=>stationsOf(x).length>0?inScope(actor,x):String(x.createdBy||x.ownerUserId||'')===String(actor.id));
+  if(FINANCIAL_COLLECTIONS.has(c) && allowedStations(actor)){const owner=ownerKey(actor.budgetOwnerCode||actor.companyOwnerCode||actor.organizationalOwnerCode||'');rows=rows.filter(x=>stationsOf(x).length>0?inScope(actor,x):String(x.createdBy||x.ownerUserId||'')===String(actor.id)||(owner&&owner===ownerKey(x.ownerCode)));}
   return rows;
 }
 function cleanId(id){ const s=String(id||'').trim(); if(!s||s.length>200) throw Object.assign(new Error('Invalid document id.'),{statusCode:400,code:'INVALID_ID'}); return s; }
@@ -196,6 +196,7 @@ async function bumpCacheVersion(db,collection){
 }
 async function writeOne(db,actor,collection,action,id,raw,{initiativeImport=false}={}){
   if(!COLLECTIONS.has(collection)) throw Object.assign(new Error(`Collection not allowed: ${collection}`),{statusCode:400,code:'COLLECTION_NOT_ALLOWED'});
+  if(['workPrograms','workActivities'].includes(collection))throw Object.assign(new Error('Company PK/AK records are managed through the validated Budget Workbook Import.'),{statusCode:403,code:'COMPANY_CODE_SERVER_ONLY'});
   if(!(collection==='inbox' && ['CREATE','UPDATE','DELETE'].includes(action)) && !(collection==='contactMessages' && action==='CREATE' && !isExternalActor(actor)) && !canWrite(actor,collection)) throw Object.assign(new Error(`Write access denied for ${collection}.`),{statusCode:403,code:'FORBIDDEN'});
   if(['users','auditLogs'].includes(collection) && !(actor.role==='Super Admin'||isOperationalAdmin(actor))) throw Object.assign(new Error('Administrative access required.'),{statusCode:403,code:'FORBIDDEN'});
   if(collection==='formSubmissions' && !isOperationalAdmin(actor) && actor.role!=='Super Admin' && action!=='CREATE') throw Object.assign(new Error('Submitted forms cannot be edited by the submitter.'),{statusCode:403,code:'SUBMISSION_IMMUTABLE'});
@@ -274,17 +275,28 @@ async function writeOne(db,actor,collection,action,id,raw,{initiativeImport=fals
     if(!String(data.source||'').trim())data.source='Manual Entry';
   }
   if(collection==='financialBudgets'){
+    const identifiers=['pkNumber','pkCode','akNumber','akCode','programId','activityId','ownerCode','sourceSystem','sourceSheet','sourceRow'];
+    if(!existing.exists&&identifiers.some(k=>Object.prototype.hasOwnProperty.call(data,k)))throw Object.assign(new Error('Company PK/AK identity is assigned by the verified Budget Workbook Import.'),{statusCode:403,code:'COMPANY_IDENTITY_SERVER_ONLY'});
+    if(existing.exists&&identifiers.some(k=>Object.prototype.hasOwnProperty.call(data,k)&&JSON.stringify(data[k]??null)!==JSON.stringify(prev[k]??null)))throw Object.assign(new Error('Company PK/AK identity cannot be modified through the Budget form.'),{statusCode:403,code:'COMPANY_IDENTITY_LOCKED'});
+    const proposedCE=String(data.costElement||'').trim();
+    if(proposedCE&&(!existing.exists||proposedCE!==String(prev.costElement||'').trim())){
+      const refs=await dataQuery(db,'referenceCatalog').get();
+      const found=refs.docs.some(doc=>{const v=doc.data()||{};return ['costElement','id:costElement','cost-element','id:cost-element'].includes(v.kind)&&v.status!=='Inactive'&&String(v.code||v.id||doc.id).trim()===proposedCE});
+      if(!found)throw Object.assign(new Error('Select an active Cost Element from Master Data.'),{statusCode:400,code:'COST_ELEMENT_UNMAPPED'});
+    }
+  }
+  if(collection==='financialBudgets'){
     const projection=Array.isArray(data.annualForecasts)?data.annualForecasts:[];
     if(projection.length>20)throw Object.assign(new Error('Too many fiscal forecast periods.'),{statusCode:400,code:'FORECAST_LIMIT'});
     const years=new Set();
     for(const r of projection){
       const year=Number(r.year),rate=Number(r.ratePerVisitor),visitors=Number(r.forecastVisitors),escalation=r.escalationPercent;
-      if(!Number.isInteger(year)||year<2000||year>2100||years.has(year)||r.ratePerVisitor==null||r.forecastVisitors==null||!Number.isFinite(rate)||rate<0||!Number.isSafeInteger(visitors)||visitors<0||escalation!=null&&(!Number.isFinite(Number(escalation))||Number(escalation)< -100||Number(escalation)>100))throw Object.assign(new Error('Invalid annual forecast period.'),{statusCode:400,code:'FORECAST_INVALID'});
+      if(!Number.isInteger(year)||year<2000||year>2100||years.has(year)||r.ratePerVisitor==null||r.forecastVisitors==null||!Number.isFinite(rate)||rate<0||!Number.isFinite(visitors)||visitors<0||escalation!=null&&(!Number.isFinite(Number(escalation))||Number(escalation)< -100||Number(escalation)>100))throw Object.assign(new Error('Invalid annual forecast period.'),{statusCode:400,code:'FORECAST_INVALID'});
       years.add(year);r.calculatedCost=rate*visitors;
     }
     if(data.planningDomain==='LOUNGE'&&data.ratePerVisitor!=null&&data.annualForecastVisitors!=null){
       const rate=Number(data.ratePerVisitor),visitors=Number(data.annualForecastVisitors);
-      if(!Number.isFinite(rate)||rate<0||!Number.isSafeInteger(visitors)||visitors<0)throw Object.assign(new Error('Invalid Lounge cost estimate.'),{statusCode:400,code:'LOUNGE_FORECAST_INVALID'});
+      if(!Number.isFinite(rate)||rate<0||!Number.isFinite(visitors)||visitors<0)throw Object.assign(new Error('Invalid Lounge cost estimate.'),{statusCode:400,code:'LOUNGE_FORECAST_INVALID'});
       data.calculatedAnnualCost=rate*visitors;
     }
   }
@@ -400,6 +412,163 @@ async function writeOne(db,actor,collection,action,id,raw,{initiativeImport=fals
   await dataQuery(db,'auditLogs').add({actorId:actor.id,actorRole:actor.role,name:actor.name||actor.username||actor.email||actor.id,username:actor.username||actor.email||'',module:collection,object:ref.id,detail:`${collection} ${action.toLowerCase()}`,targetType:`EDITION1_${collection.toUpperCase()}`,targetId:ref.id,action:action.charAt(0)+action.slice(1).toLowerCase(),timestamp:FieldValue.serverTimestamp(),result:'SUCCESS'});
   return {id:ref.id,...sanitize(out.data())};
 }
+// Work Program / Activity / Budget workbook import. Read-only preview by default;
+// commit is one Firestore transaction. No automatic approval or destructive reconciliation.
+const crypto = require('crypto');
+const importError=(code,message,statusCode=400)=>Object.assign(new Error(message),{code,statusCode});
+const keyHash=x=>crypto.createHash('sha256').update(String(x)).digest('hex').slice(0,32);
+const norm=x=>String(x??'').trim().replace(/\s+/g,' ');
+const ownerKey=x=>norm(x).toUpperCase();
+const codeConfig=/^[A-Z0-9]+(?:\.[A-Z0-9]+)*$/;
+const pkIdentity=r=>r.pkNumber!=null?'number:'+r.pkNumber:'name:'+norm(r.program).toLowerCase();
+const akIdentity=r=>pkIdentity(r)+'|'+(r.akNumber!=null?'number:'+r.akNumber:'name:'+norm(r.activity).toLowerCase());
+function importOwner(actor,requested){
+ const owner=ownerKey(requested);
+ if(!owner||owner.length>45||!codeConfig.test(owner))throw importError('OWNER_REQUIRED','Select a valid organizational budget owner.');
+ if(actor.role==='Super Admin'||isOperationalAdmin(actor))return owner;
+ const permitted=ownerKey(actor.budgetOwnerCode||actor.companyOwnerCode||actor.organizationalOwnerCode||'');
+ if(!permitted||permitted!==owner)throw importError('OWNER_SCOPE','Budget owner must match the verified organizational owner on your account.',403);
+ return owner;
+}
+const nonnegative=(v,label)=>{if(v===null||v===undefined||v==='')return null;const n=Number(v);if(!Number.isFinite(n)||n<0)throw importError('INVALID_AMOUNT',label+' must be a nonnegative number.');return n;};
+function validateImportRows(rows,owner,year){
+ if(!Array.isArray(rows)||!rows.length||rows.length>220)throw importError('INVALID_IMPORT_SIZE','Upload 1 to 220 budget lines in one workbook.');
+ if(!Number.isSafeInteger(year)||year<2020||year>2100)throw importError('YEAR_INVALID','Select a valid fiscal year.');
+ const seen=new Set(),pkSeen=new Map(),akSeen=new Map(),pkNumberOwner=new Map(),akNumberOwner=new Map(),out=[];
+ for(let i=0;i<rows.length;i++){
+  const r=rows[i];if(!r||!['SUMMARY','LOUNGE'].includes(r.kind))throw importError('IMPORT_ROW_INVALID','Unsupported workbook row '+(i+1));
+  const costElement=norm(r.costElement),costCenter=norm(r.costCenter).toUpperCase(),currency=ownerKey(r.currency||'IDR');
+  if(!/^\d{4,12}$/.test(costElement)||!costCenter||costCenter.length>40||!/^[A-Z]{3}$/.test(currency))throw importError('IMPORT_REFERENCE_INVALID','Cost Element, Cost Center, or Currency is invalid at row '+(i+1));
+  const sourceRow=Number(r.sourceRow);if(!Number.isSafeInteger(sourceRow)||sourceRow<2||sourceRow>100000)throw importError('IMPORT_SOURCE_INVALID','Invalid source row.');
+  const base={kind:r.kind,sourceRow,costElement,costCenter,currency};
+  if(r.kind==='SUMMARY'){
+   const pk=norm(r.program),ak=norm(r.activity),code=ownerKey(r.pkCode),akCode=ownerKey(r.akCode);
+   if(!pk||!ak||pk.length>250||ak.length>350)throw importError('IMPORT_NAME_REQUIRED','Work program and activity names are required at row '+sourceRow);
+   const number=v=>v===''||v==null?null:Number(v);
+   const pkNumber=number(r.pkNumber),akNumber=number(r.akNumber);
+   if(pkNumber!==null&&(!Number.isSafeInteger(pkNumber)||pkNumber<1)||akNumber!==null&&(!Number.isSafeInteger(akNumber)||akNumber<1))throw importError('IMPORT_CODE_INVALID','Invalid PK/AK number at row '+sourceRow);
+   // Validate legacy code segments; do not invent a new code for a historical identifier.
+   const prefix=String(year).slice(-2)+'.'+owner+'.';
+   if(code&&(!pkNumber||code!==prefix+pkNumber))throw importError('IMPORT_PK_MISMATCH','PK code and number disagree at row '+sourceRow);
+   if(akCode&&(!akNumber||!pkNumber||akCode!==prefix+pkNumber+'.'+akNumber))throw importError('IMPORT_AK_MISMATCH','AK code and number disagree at row '+sourceRow);
+   const qty=nonnegative(r.quantity,'Quantity'),rate=nonnegative(r.rate,'Rate'),total=nonnegative(r.total,'Total cost');
+   const proposed=total!==null?total:qty!==null&&rate!==null?qty*rate:null;
+   const identitySource={program:pk,activity:ak,pkNumber,akNumber},pkK=pkIdentity(identitySource),akK=akIdentity(identitySource);
+   if(pkSeen.has(pkK)&&pkSeen.get(pkK)!==pk.toLowerCase())throw importError('PK_NAME_CONFLICT','One company PK code has conflicting program names.');
+   if(akSeen.has(akK)&&akSeen.get(akK)!==ak.toLowerCase())throw importError('AK_NAME_CONFLICT','One company AK code has conflicting activity names.');
+   if(pkNumber!=null){const prev=pkNumberOwner.get(pkNumber);if(prev&&prev!==pk.toLowerCase())throw importError('PK_NUMBER_CONFLICT','PK Number is reused by a different work program.');pkNumberOwner.set(pkNumber,pk.toLowerCase());}
+   if(akNumber!=null&&pkNumber!=null){const akRef=pkNumber+':'+akNumber,prev=akNumberOwner.get(akRef);if(prev&&prev!==ak.toLowerCase())throw importError('AK_NUMBER_CONFLICT','AK Number is reused by a different activity under the same PK.');akNumberOwner.set(akRef,ak.toLowerCase());}
+   pkSeen.set(pkK,pk.toLowerCase());akSeen.set(akK,ak.toLowerCase());
+   const key='SUMMARY:'+akK+':'+costElement+':'+costCenter+':'+currency;
+   if(seen.has(key))throw importError('IMPORT_DUPLICATE','Duplicate Summary budget line at row '+sourceRow);seen.add(key);
+   out.push({...base,program:pk,activity:ak,pkNumber,akNumber,pkCode:code,akCode,quantity:qty,rate,proposed,subunit:norm(r.subunit),classification:norm(r.classification),mandatory:norm(r.mandatory),procurement:norm(r.procurement),contractYears:r.contractYears??null,monthly:Array.isArray(r.monthly)?r.monthly.map(x=>nonnegative(x,'Monthly allocation')):[],sourceKey:key});
+  }else{
+   const station=ownerKey(r.station),provider=norm(r.provider),fy=Number(r.year);
+   if(!/^[A-Z0-9]{3,4}$/.test(station)||!provider||!Number.isSafeInteger(fy)||fy<2020||fy>2100)throw importError('LOUNGE_ROW_INVALID','Invalid Lounge forecast at row '+sourceRow);
+   const rate=nonnegative(r.rate,'Rate'),visitors=nonnegative(r.visitors,'Visitors');
+   if(rate===null&&visitors===null)throw importError('LOUNGE_FORECAST_INCOMPLETE','Lounge rate and visitors are both missing at row '+sourceRow);
+   const key='LOUNGE:'+station+':'+provider.toLowerCase()+':'+fy+':'+costCenter+':'+costElement+':'+norm(r.contractPeriod).toLowerCase();
+   if(seen.has(key))throw importError('IMPORT_DUPLICATE','Duplicate Lounge budget line at row '+sourceRow);seen.add(key);
+   out.push({...base,station,provider,year:fy,rate,visitors,proposed:rate===null||visitors===null?null:rate*visitors,sourceKey:key,contractPeriod:norm(r.contractPeriod)});
+  }
+ }
+ return out;
+}
+async function budgetWorkbookImport(db,actor,body){
+ if(!canWrite(actor,'financialBudgets')||isExternalActor(actor))throw importError('IMPORT_FORBIDDEN','Budget import requires internal planning edit access.',403);
+ const owner=importOwner(actor,body.owner),year=Number(body.year),rows=validateImportRows(body.rows,owner,year);
+ // Firestore Master Data is the authority. Spreadsheet CE names are not trusted.
+ const ceDocs=await dataQuery(db,'referenceCatalog').get();
+ const ce=new Map();for(const doc of ceDocs.docs){const x=doc.data()||{};if(['costElement','id:costElement','cost-element','id:cost-element'].includes(String(x.kind))&&x.status!=='Inactive')ce.set(String(x.code||x.id||doc.id).trim(),{name:x.name||x.costElementName||'',id:doc.id});}
+ const allowCE=body.includeMissingCostElements===true;
+ if(allowCE && actor.role!=='Super Admin')throw importError('MASTER_IMPORT_FORBIDDEN','Only Superadmin may register missing Cost Elements.',403);
+ const workbookCE=new Map();for(const x of (Array.isArray(body.costElements)?body.costElements:[])){
+   const code=norm(x.code),name=norm(x.name);if(!/^\d{4,12}$/.test(code)||!name||name.length>240)throw importError('MASTER_CE_INVALID','Invalid Cost Element reference in workbook.');
+   if(workbookCE.has(code)&&workbookCE.get(code).name!==name)throw importError('MASTER_CE_DUPLICATE','Cost Element has conflicting names in List CE.');
+   workbookCE.set(code,{code,name,hierarchy:Array.isArray(x.hierarchy)?x.hierarchy.slice(0,5).map(norm):[]});
+ }
+ const missing=rows.filter(r=>!ce.has(r.costElement));
+ const mismatches=missing.filter(r=>!allowCE||!workbookCE.has(r.costElement)).map(r=>({row:r.sourceRow,code:r.costElement,message:'Cost Element not found in active Master Data. Register it first or select authorized master import.'}));
+ const ceNew=[...new Set(missing.filter(r=>allowCE&&workbookCE.has(r.costElement)).map(r=>r.costElement))].map(code=>workbookCE.get(code));
+ const scope=rows.filter(r=>r.station&&!inScope(actor,{station:r.station})).map(r=>({row:r.sourceRow,code:r.station,message:'Station outside account scope.'}));
+ const conflicts=[...mismatches,...scope];
+ // We never infer Approved Budget from workbook estimates or monthly distributions.
+ if(String(body.mode||'PREVIEW').toUpperCase()!=='COMMIT'){
+  const refs=rows.map(r=>dataRef(db,'financialBudgets','wb-'+keyHash(owner+'|'+year+'|'+r.sourceKey)));
+  const snapshots=typeof db.getAll==='function'?await db.getAll(...refs):await Promise.all(refs.map(ref=>ref.get()));
+  const statuses=rows.map((r,i)=>{const found=snapshots[i].exists,previous=found?snapshots[i].data()||{}:null;
+    const mismatch=found&&((previous.proposedAmount??null)!==(r.proposed??null)||String(previous.costElement||'')!==r.costElement);
+    return {source:r.kind,row:r.sourceRow,reference:r.kind==='SUMMARY'?(r.akCode||'Code assigned on import'):r.station+' / '+r.year,costElement:r.costElement,proposed:r.proposed,status:mismatch?'Conflict':found?'Unchanged':'New'};
+  });
+  const clashes=statuses.filter(x=>x.status==='Conflict').map(x=>({row:x.row,code:x.reference,message:'Existing budget differs from imported Proposed Amount or Cost Element. No overwrite permitted.'}));
+  return {preview:true,owner,year,count:rows.length,programLines:rows.filter(r=>r.kind==='SUMMARY').length,loungeLines:rows.filter(r=>r.kind==='LOUNGE').length,newCostElements:ceNew.length,newLines:statuses.filter(x=>x.status==='New').length,unchangedLines:statuses.filter(x=>x.status==='Unchanged').length,conflicts:[...conflicts,...clashes],statuses,requiresConfirmation:true};
+ }
+ if(conflicts.length)throw importError('IMPORT_CONFLICT','Resolve all Cost Element and station conflicts before import.',409);
+ if(body.confirmed!==true)throw importError('IMPORT_CONFIRMATION_REQUIRED','Review and confirm the import before writing.');
+ const programs=rows.filter(r=>r.kind==='SUMMARY');
+ const identity=x=>keyHash(owner+'|'+year+'|'+x);
+ // Numeric company codes already on the worksheet take precedence, but are checked
+ // against same-owner records. Missing codes are allocated inside this transaction.
+ const counterRef=db.collection('portalMetadata').doc('budgetCompanySequences').collection('owners').doc(keyHash(owner+'|'+year));
+ const businessCounter=db.collection('portalMetadata').doc('businessCodeCounters').collection('sequences').doc('BUDGET');
+ const prefixConfig=ceDocs.docs.map(d=>d.data()||{}).find(x=>x.kind==='businessCodePrefix'&&ownerKey(x.id)==='BUDGET'&&x.status!=='Inactive')||{};
+ const budgetPrefix=String(prefixConfig.prefix||'BGT').toUpperCase().replace(/[^A-Z0-9-]/g,'')||'BGT',budgetDigits=Math.max(2,Math.min(8,Number(prefixConfig.digits||4)));
+ const refPK=x=>dataRef(db,'workPrograms','wp-'+identity('PK:'+x));
+ const refAK=x=>dataRef(db,'workActivities','wa-'+identity('AK:'+x));
+ const plannedPk=new Map();
+ for(const r of programs){const p=pkIdentity(r),old=plannedPk.get(p);if(old&&norm(old.name).toLowerCase()!==norm(r.program).toLowerCase())throw importError('IMPORT_PK_CONFLICT','One PK code has conflicting program names.');if(!old)plannedPk.set(p,{name:r.program,pkNumber:r.pkNumber});}
+ const pkRefs=[...plannedPk].map(([k,v])=>({key:k,ref:refPK(k),...v}));
+ const akRefs=[...new Map(programs.map(r=>[akIdentity(r),{key:akIdentity(r),ref:refAK(akIdentity(r)),row:r}])).values()];
+ const lineRefs=rows.map(r=>({r,ref:dataRef(db,'financialBudgets','wb-'+keyHash(owner+'|'+year+'|'+r.sourceKey))}));
+ const ceRefs=ceNew.map(x=>({x,ref:dataRef(db,'referenceCatalog','ce-'+x.code)}));
+ const now=FieldValue.serverTimestamp(),all=[counterRef,businessCounter,...pkRefs.map(p=>p.ref),...akRefs.map(a=>a.ref),...lineRefs.map(l=>l.ref),...ceRefs.map(c=>c.ref)];
+ if(new Set(all.map(x=>x.path)).size!==all.length)throw importError('IMPORT_KEY_CONFLICT','Multiple records resolve to the same identifier.');
+ if(all.length+5>450)throw importError('IMPORT_SIZE_LIMIT','Workbook exceeds the safe atomic import size. Separate it by fiscal year or organizational owner.');
+ const answer=await db.runTransaction(async tx=>{
+  // All reads precede writes for Firestore transaction compliance.
+  const [snapshots,priorPrograms,priorActivities]=await Promise.all([Promise.all(all.map(x=>tx.get(x))),tx.get(dataQuery(db,'workPrograms').where('ownerCode','==',owner)),tx.get(dataQuery(db,'workActivities').where('ownerCode','==',owner))]);const snaps=new Map(all.map((x,i)=>[x.path,snapshots[i]]));
+  let nextPK=Number(snapshots[0].data()?.nextPK||0),nextBudget=Number(snapshots[1].data()?.value||0),newRecords=0,unchanged=0;
+  for(const {x,ref} of ceRefs){if(snaps.get(ref.path).exists)throw importError('MASTER_CE_CONCURRENT','Cost Element was registered during preview. Refresh and preview again.',409);tx.create(ref,{id:x.code,kind:'costElement',name:x.name,code:x.code,hierarchy:x.hierarchy,status:'Active',createdBy:actor.id,createdAt:now,updatedAt:now});newRecords++;ce.set(x.code,{name:x.name,id:ref.id});}
+  const pkNums=new Map(),akNums=new Map();
+  const prefix=String(year).slice(-2)+'.'+owner+'.';
+  const usedPK=new Map(),usedAK=new Map();
+  for(const doc of priorPrograms.docs){const v=doc.data()||{},n=Number(v.pkNumber||0);if(Number(v.fiscalYear)!==year)continue;if(n){usedPK.set(n,norm(v.name).toLowerCase());nextPK=Math.max(nextPK,n);}}
+  for(const doc of priorActivities.docs){const v=doc.data()||{},k=String(v.programId||''),n=Number(v.akNumber||0);if(Number(v.fiscalYear)!==year)continue;if(k&&n){const map=usedAK.get(k)||new Map();map.set(n,norm(v.name).toLowerCase());usedAK.set(k,map);}}
+  for(const p of pkRefs){const old=snaps.get(p.ref.path).data()||{};if(old.pkNumber!=null)usedPK.set(Number(old.pkNumber),norm(p.name).toLowerCase());if(p.pkNumber!=null){const collision=usedPK.get(p.pkNumber);if(collision&&collision!==norm(p.name).toLowerCase())throw importError('PK_NUMBER_CONFLICT','PK number is already assigned to another work program.',409);usedPK.set(p.pkNumber,norm(p.name).toLowerCase());}}
+  for(const p of pkRefs){const snap=snaps.get(p.ref.path),old=snap.data()||{};
+   if(old.name&&norm(old.name).toLowerCase()!==norm(p.name).toLowerCase())throw importError('PK_NAME_CONFLICT','Existing PK identity mismatch.',409);
+   if(old.pkNumber!=null&&p.pkNumber!=null&&Number(old.pkNumber)!==p.pkNumber)throw importError('PK_NUMBER_CONFLICT','Existing PK number differs from workbook.',409);
+   const n=Number(old.pkNumber||p.pkNumber||0)||(()=>{do{nextPK++}while(usedPK.has(nextPK));return nextPK})();nextPK=Math.max(nextPK,n);usedPK.set(n,norm(p.name).toLowerCase());pkNums.set(p.key,n);
+   if(!snap.exists)newRecords++;else unchanged++;
+  }
+  for(const a of akRefs){const snap=snaps.get(a.ref.path),old=snap.data()||{},r=a.row,pkKey=pkIdentity(r),pkNumber=pkNums.get(pkKey);const pool=akNums.get(pkKey)||new Map(usedAK.get(refPK(pkKey).id)||[]);akNums.set(pkKey,pool);
+   if(old.akNumber!=null)pool.set(Number(old.akNumber),a.key);
+   if(r.akNumber!=null){const c=pool.get(r.akNumber);if(c&&c!==r.activity.toLowerCase()&&c!==a.key)throw importError('AK_NUMBER_CONFLICT','AK number already assigned under this PK.',409);pool.set(r.akNumber,a.key);}
+   if(old.akNumber!=null&&r.akNumber!=null&&Number(old.akNumber)!==r.akNumber)throw importError('AK_NUMBER_CONFLICT','Existing AK number differs from workbook.',409);
+   const n=Number(old.akNumber||r.akNumber||0)||(()=>{let t=Number(snaps.get(refPK(pkKey).path).data()?.nextAK||0);while(pool.has(++t)){}return t})();pool.set(n,a.key);
+   const code=prefix+pkNumber+'.'+n;
+   if(!snap.exists){tx.create(a.ref,{name:r.activity,programId:refPK(pkKey).id,ownerCode:owner,performingUnit:r.subunit||'',fiscalYear:year,pkNumber,pkCode:prefix+pkNumber,akNumber:n,akCode:code,status:'Draft',createdBy:actor.id,createdAt:now,updatedAt:now});newRecords++;}else unchanged++;
+  }
+  for(const p of pkRefs){const pool=akNums.get(p.key)||new Map(),snap=snaps.get(p.ref.path),maximum=Math.max(Number(snap.data()?.nextAK||0),0,...pool.keys()),n=pkNums.get(p.key);if(!snap.exists)tx.create(p.ref,{name:p.name,ownerCode:owner,fiscalYear:year,pkNumber:n,pkCode:prefix+n,nextAK:maximum,status:'Draft',createdBy:actor.id,createdAt:now,updatedAt:now});else if(maximum>Number(snap.data()?.nextAK||0))tx.update(p.ref,{nextAK:maximum,updatedAt:now});}
+  for(const {r,ref} of lineRefs){const snap=snaps.get(ref.path);
+   if(snap.exists){const old=snap.data()||{};
+    // Re-import never silently modifies proposals, approvals or financial actuals.
+    if((old.proposedAmount??null)!==(r.proposed??null)||String(old.costElement||'')!==r.costElement)throw importError('IMPORT_EXISTING_CONFLICT','An existing budget differs from the workbook at row '+r.sourceRow+'. Review manually.',409);
+    unchanged++;continue;
+   }
+   const programKey=r.kind==='SUMMARY'?pkIdentity(r):null,activityKey=r.kind==='SUMMARY'?akIdentity(r):null,pkNumber=programKey?pkNums.get(programKey):null,akNumber=activityKey?akNums.get(programKey).get(activityKey):null;
+   tx.create(ref,{businessCode:budgetPrefix+'-'+String(++nextBudget).padStart(budgetDigits,'0'),name:r.kind==='SUMMARY'?r.activity:r.provider+' · '+r.station,year:r.kind==='SUMMARY'?year:r.year,ownerCode:owner,ownerType:r.kind==='LOUNGE'?'BO':'HO',station:r.station||'',category:r.kind==='LOUNGE'?'Lounge':'Work Program',planningDomain:r.kind==='LOUNGE'?'LOUNGE':'INITIATIVE',currency:r.currency,costCenter:r.costCenter,costElement:r.costElement,costElementName:ce.get(r.costElement).name,proposedAmount:r.proposed,approvedAmount:null,revisedApprovedAmount:null,status:'Draft',programId:programKey?refPK(programKey).id:'',activityId:activityKey?refAK(activityKey).id:'',pkNumber,pkCode:pkNumber?prefix+pkNumber:'',akNumber,akCode:akNumber?prefix+pkNumber+'.'+akNumber:'',quantity:r.quantity??null,rate:r.rate,ratePerVisitor:r.kind==='LOUNGE'?r.rate:null,annualForecastVisitors:r.kind==='LOUNGE'?r.visitors:null,calculatedAnnualCost:r.kind==='LOUNGE'?r.proposed:null,annualForecasts:r.kind==='LOUNGE'&&r.rate!==null&&r.visitors!==null?[{year:r.year,ratePerVisitor:r.rate,forecastVisitors:r.visitors,calculatedCost:r.proposed}]:[],contractPeriod:r.contractPeriod||'',monthlyAllocation:r.monthly||[],sourceSystem:'Budget Workbook',sourceSheet:r.kind==='SUMMARY'?'Summary':'Kertas Kerja',sourceRow:r.sourceRow,createdBy:actor.id,createdAt:now,updatedAt:now});newRecords++;
+  }
+  if(newRecords===0)return {newRecords,unchanged};
+  tx.set(counterRef,{nextPK:Math.max(nextPK,Number(snapshots[0].data()?.nextPK||0)),ownerCode:owner,year,updatedAt:now},{merge:true});
+  if(nextBudget>Number(snapshots[1].data()?.value||0))tx.set(businessCounter,{value:nextBudget,updatedAt:now},{merge:true});
+  tx.set(db.collection('portalMetadata').doc('cacheState'),{version:FieldValue.increment(1),updatedAt:now,lastCollection:'financialBudgets'},{merge:true});
+  tx.create(dataQuery(db,'auditLogs').doc(),{actorId:actor.id,actorRole:actor.role,module:'Budget Import',action:'Import',timestamp:now,detail:'Integrated workbook import',rowCount:rows.length,ownerCode:owner,fiscalYear:year,result:'SUCCESS'});
+  return {newRecords,unchanged};
+ });
+ return {...answer,owner,year,totalLines:rows.length,committed:true};
+}
+
 exports.handler=async(event)=>{
   try{
     const {db,actor}=await actorFor(event);
@@ -424,6 +593,7 @@ exports.handler=async(event)=>{
     if(event.httpMethod==='POST'){
       let body; try{body=JSON.parse(event.body||'{}')}catch{return bad(400,'INVALID_JSON','Invalid JSON body.')}
       const collection=String(body.collection||'').trim(); const action=String(body.action||'').toUpperCase();
+      if(action==='IMPORT_BUDGET_WORKBOOK')return ok({ok:true,source:'Firestore',result:await budgetWorkbookImport(db,actor,body)});
       if(action==='BATCH'){
         const changes=Array.isArray(body.changes)?body.changes:[];
         if(!changes.length || changes.length>75) return bad(400,'INVALID_BATCH','Batch must contain 1 to 75 changes.');
