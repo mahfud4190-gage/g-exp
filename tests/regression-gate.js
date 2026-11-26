@@ -21,3 +21,5 @@ if(!failed){const result=spawnSync(process.execPath,['tests/business-controls-ru
 if(!failed){const result=spawnSync(process.execPath,['tests/monitoring-layout-contract.js'],{cwd:root,stdio:'inherit',env:process.env});if(result.status!==0){failed++;process.exitCode=1;}}
 if(!failed){const result=spawnSync(process.execPath,['tests/master-inbox-planning-checklist-contract.js'],{cwd:root,stdio:'inherit',env:process.env});if(result.status!==0){failed++;process.exitCode=1;}}
 if(!failed)require('./ui-integrity-gate.js');
+
+if(!failed){const result=spawnSync(process.execPath,['tests/financial-operational-contract.js'],{cwd:root,stdio:'inherit',env:process.env});if(result.status!==0){failed++;process.exitCode=1;}}

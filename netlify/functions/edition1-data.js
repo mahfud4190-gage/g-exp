@@ -11,7 +11,7 @@ const COLLECTIONS = new Set([
   'airlines','groundHandlers','serviceAlignments','airportCosts','aircraftConfigs','assets','facilities',
   'monitoringTemplates','monitoringAssessments','formTemplates','monitoringWorks','formSubmissions','customerExperience','attentionSettings',
   'referenceCatalog','requirementMatrix','stationCapabilities','planningDomains','currencies','exchangeRates',
-  'financialBudgets','financialCostObjects','financialAllocations','financialActuals','financialAdjustments','financialCommitments','financialForecasts'
+  'financialBudgets','financialCostObjects','financialAllocations','financialActuals','financialAdjustments','financialCommitments','financialForecasts','operationalUsage'
 ]);
 const DATA_GROUP_BY_COLLECTION = Object.fromEntries([...COLLECTIONS].map(name => [name, name]));
 const FINANCIAL_COLLECTIONS = new Set(['financialBudgets','financialCostObjects','financialAllocations','financialActuals','financialAdjustments','financialCommitments','financialForecasts']);
@@ -38,7 +38,7 @@ function isExternalActor(actor){
 }
 function ownsRecord(actor,row){return [row?.ownerUserId,row?.createdBy,row?.actorId,row?.userId].filter(Boolean).map(String).includes(String(actor?.id||''));}
 const MODULE_BY_COLLECTION = {
-  initiatives:'initiatives', financialBudgets:'planning',financialCostObjects:'planning',financialAllocations:'planning',financialActuals:'planning',financialAdjustments:'planning',financialCommitments:'planning',financialForecasts:'planning', projectEvents:'calendar', inbox:'inbox', airports:'data', personnel:'data',
+  initiatives:'initiatives', financialBudgets:'planning',financialCostObjects:'planning',financialAllocations:'planning',financialActuals:'planning',financialAdjustments:'planning',financialCommitments:'planning',financialForecasts:'planning',operationalUsage:'planning', projectEvents:'calendar', inbox:'inbox', airports:'data', personnel:'data',
   lounges:'planning', loungeVisitors:'lounge-visitor', loungePurchases:'lounge-purchase', flightSchedule:'lounge-flights',
   stationMaterials:'planning', boSpaces:'planning', serviceProcurement:'planning', airportSystems:'planning',
   gasoMaster:'planning', gasoServiceSupport:'planning', gasoPlanningService:'planning', documents:'planning',
@@ -262,9 +262,41 @@ async function writeOne(db,actor,collection,action,id,raw,{initiativeImport=fals
     if(!editor && !stationsOf({...prev,...data}).length && String(data.status||'Draft')!=='Draft')throw Object.assign(new Error('Select a station before submitting this financial record.'),{statusCode:403,code:'FINANCIAL_SCOPE_REQUIRED'});
     if(existing.exists && ['Approved','Verified'].includes(String(prev.status||'')) && String(data.status||'')==='Draft')throw Object.assign(new Error('Approved records require formal revision, not a reset to Draft.'),{statusCode:409,code:'FINANCIAL_REVISION_REQUIRED'});
   }
+  if(collection==='operationalUsage'){
+    if(action==='DELETE')throw Object.assign(new Error('Operational usage is retained for audit; use a correction record.'),{statusCode:403,code:'USAGE_DELETE_FORBIDDEN'});
+    if(action==='UPDATE')throw Object.assign(new Error('Usage records are immutable; contact the authorized owner for a documented correction.'),{statusCode:403,code:'USAGE_IMMUTABLE'});
+    const day=String(data.date||''),station=String(data.station||'').toUpperCase(),system=String(data.systemType||'').toUpperCase();
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||!Number.isFinite(new Date(day+'T00:00:00Z').getTime())||new Date(day+'T00:00:00Z').toISOString().slice(0,10)!==day||!['SSBD','KIOSK'].includes(system)||!/^[A-Z0-9]{3,4}$/.test(station)||ref.id!==system+'-'+station+'-'+day||!Number.isSafeInteger(Number(data.usageCount))||Number(data.usageCount)<0){
+      throw Object.assign(new Error('Valid date, station, system type and nonnegative integer usage count are required.'),{statusCode:400,code:'USAGE_INVALID'});
+    }
+    if(!inScope(actor,{station}))throw Object.assign(new Error('Station outside account scope.'),{statusCode:403,code:'SCOPE_FORBIDDEN'});
+    data.station=station;data.systemType=system;data.date=day;data.usageCount=Number(data.usageCount);
+    if(!String(data.source||'').trim())data.source='Manual Entry';
+  }
+  if(collection==='financialBudgets'){
+    const projection=Array.isArray(data.annualForecasts)?data.annualForecasts:[];
+    if(projection.length>20)throw Object.assign(new Error('Too many fiscal forecast periods.'),{statusCode:400,code:'FORECAST_LIMIT'});
+    const years=new Set();
+    for(const r of projection){
+      const year=Number(r.year),rate=Number(r.ratePerVisitor),visitors=Number(r.forecastVisitors),escalation=r.escalationPercent;
+      if(!Number.isInteger(year)||year<2000||year>2100||years.has(year)||r.ratePerVisitor==null||r.forecastVisitors==null||!Number.isFinite(rate)||rate<0||!Number.isSafeInteger(visitors)||visitors<0||escalation!=null&&(!Number.isFinite(Number(escalation))||Number(escalation)< -100||Number(escalation)>100))throw Object.assign(new Error('Invalid annual forecast period.'),{statusCode:400,code:'FORECAST_INVALID'});
+      years.add(year);r.calculatedCost=rate*visitors;
+    }
+    if(data.planningDomain==='LOUNGE'&&data.ratePerVisitor!=null&&data.annualForecastVisitors!=null){
+      const rate=Number(data.ratePerVisitor),visitors=Number(data.annualForecastVisitors);
+      if(!Number.isFinite(rate)||rate<0||!Number.isSafeInteger(visitors)||visitors<0)throw Object.assign(new Error('Invalid Lounge cost estimate.'),{statusCode:400,code:'LOUNGE_FORECAST_INVALID'});
+      data.calculatedAnnualCost=rate*visitors;
+    }
+  }
   if(collection==='referenceCatalog' && data.kind==='businessCodePrefix' && actor.role!=='Super Admin')throw Object.assign(new Error('Only Superadmin may configure reference code prefixes.'),{statusCode:403,code:'PREFIX_ADMIN_ONLY'});
+  if(collection==='financialBudgets' && !isOperationalAdmin(actor) && actor.role!=='Super Admin'){
+    for(const field of ['approvedAmount','revisedApprovedAmount','approvalReference']){
+      const before=existing.exists?prev[field]??null:null,next=data[field]??null;
+      if(JSON.stringify(before)!==JSON.stringify(next))throw Object.assign(new Error('Approved and revised budget values require authorized management.'),{statusCode:403,code:'APPROVAL_FIELD_FORBIDDEN'});
+    }
+  }
   if(collection==='financialBudgets' && ['Approved','Verified'].includes(String(data.status||''))){
-    if(!Number.isFinite(Number(data.approvedAmount??data.revisedApprovedAmount)) || !String(data.approvalReference||'').trim())throw Object.assign(new Error('Approved Budget requires amount and approval reference.'),{statusCode:400,code:'FINANCIAL_APPROVAL_INCOMPLETE'});
+    if((data.approvedAmount==null||data.approvedAmount==='')&&(data.revisedApprovedAmount==null||data.revisedApprovedAmount==='') || !Number.isFinite(Number(data.revisedApprovedAmount??data.approvedAmount)) || Number(data.revisedApprovedAmount??data.approvedAmount)<0 || !String(data.approvalReference||'').trim())throw Object.assign(new Error('Approved Budget requires amount and approval reference.'),{statusCode:400,code:'FINANCIAL_APPROVAL_INCOMPLETE'});
   }
   if(collection==='touchpoints'&&existing.exists&&/(?:^|[^a-z])(nps|csi)(?:[^a-z]|$)/i.test([prev.sourceType,prev.source,prev.sourceLabel,prev.origin,prev.originSource].filter(Boolean).join(' '))) throw Object.assign(new Error('Corporate NPS/CSI touch points cannot be edited.'),{statusCode:403,code:'CSI_TOUCHPOINT_LOCKED'});
   if(collection==='inbox' && action==='CREATE'){
@@ -279,6 +311,13 @@ async function writeOne(db,actor,collection,action,id,raw,{initiativeImport=fals
   }
   if(isExternalActor(actor) && existing.exists && !ownsRecord(actor,prev)) throw Object.assign(new Error('External users can only update their own records.'),{statusCode:403,code:'OWNERSHIP_FORBIDDEN'});
   if(!isExternalActor(actor) && existing.exists && collection!=='inbox' && !inScope(actor,prev)) throw Object.assign(new Error('Record outside account scope.'),{statusCode:403,code:'SCOPE_FORBIDDEN'});
+  if(collection==='initiatives'){
+    for(const field of ['budget','estimatedCost','actualCost']){
+      if(Object.prototype.hasOwnProperty.call(data,field) && (!existing.exists || JSON.stringify(data[field]??null)!==JSON.stringify(prev[field]??null))){
+        throw Object.assign(new Error('Budget values must be maintained in Budget & Financial.'),{statusCode:403,code:'BUDGET_SINGLE_ENTRY'});
+      }
+    }
+  }
   if(collection==='initiatives' && existing.exists && !isExternalActor(actor) && actor.role!=='Super Admin' && !isOperationalAdmin(actor)){
     const creator=prev.createdBy?(await db.collection('users').doc(String(prev.createdBy)).get()):null;
     const owner=creator?.exists?creator.data():null;
